@@ -11,18 +11,9 @@ from supabase import create_client, Client
 st.set_page_config(
     page_title="CreatorOS",
     page_icon="🔒",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
-
-# =============================================================================
-# CUSTOM CSS - UI Cleanup
-# =============================================================================
-st.markdown("""
-<style>
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-</style>
-""", unsafe_allow_html=True)
 
 # =============================================================================
 # SUPABASE SETUP
