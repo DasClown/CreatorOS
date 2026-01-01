@@ -1,12 +1,12 @@
 import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import io
-import os
 import zipfile
 from supabase import create_client, Client
+import pandas as pd
 
 # =============================================================================
-# PAGE CONFIG - MUSS ALS ERSTES KOMMEN
+# PAGE CONFIG
 # =============================================================================
 st.set_page_config(
     page_title="CreatorOS",
@@ -16,12 +16,17 @@ st.set_page_config(
 )
 
 # =============================================================================
+# CONSTANTS
+# =============================================================================
+ADMIN_EMAIL = "janick@icanhasbucket.de"
+
+# =============================================================================
 # SUPABASE SETUP
 # =============================================================================
 
 @st.cache_resource
 def init_supabase():
-    """Initialisiere Supabase Client (mit Caching)"""
+    """Initialisiere Supabase Client"""
     url = st.secrets["supabase"]["url"]
     key = st.secrets["supabase"]["key"]
     return create_client(url, key)
@@ -32,623 +37,536 @@ supabase: Client = init_supabase()
 # SESSION STATE INITIALIZATION
 # =============================================================================
 
-def init_session_state():
-    """Initialisiere Session State mit Default-Werten"""
-    defaults = {
-        "profile_name": "demo",
-        "is_pro": False,
-        "watermark_type": "Text",
-        "position": "Gekachelt (Tiled)",
-        "watermark_text": "© CreatorOS",
-        "size_factor_text": 1.0,
-        "size_factor_logo": 0.15,
-        "opacity": 180,
-        "padding": 50,
-        "filename_prefix": "",
-        "output_format": "PNG",
-        "jpeg_quality": 85
-    }
-    
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+if "user" not in st.session_state:
+    st.session_state["user"] = None
 
-init_session_state()
+if "is_pro" not in st.session_state:
+    st.session_state["is_pro"] = False
+
+if "watermark_text" not in st.session_state:
+    st.session_state["watermark_text"] = "© CreatorOS"
+
+if "opacity" not in st.session_state:
+    st.session_state["opacity"] = 180
+
+if "padding" not in st.session_state:
+    st.session_state["padding"] = 50
+
+if "output_format" not in st.session_state:
+    st.session_state["output_format"] = "PNG"
+
+if "jpeg_quality" not in st.session_state:
+    st.session_state["jpeg_quality"] = 85
+
+# =============================================================================
+# AUTH FUNCTIONS
+# =============================================================================
+
+def login_screen():
+    """Login/Signup Screen"""
+    st.title("🔒 CreatorOS")
+    st.write("Privacy & Watermark Bot für Content-Creator")
+    
+    st.divider()
+    
+    tab1, tab2 = st.tabs(["Login", "Registrieren"])
+    
+    with tab1:
+        st.subheader("Login")
+        email = st.text_input("Email", key="login_email")
+        password = st.text_input("Passwort", type="password", key="login_password")
+        
+        if st.button("🔓 Einloggen", type="primary", use_container_width=True):
+            if email and password:
+                try:
+                    response = supabase.auth.sign_in_with_password({
+                        "email": email,
+                        "password": password
+                    })
+                    
+                    if response.user:
+                        st.session_state["user"] = response.user
+                        load_user_settings(email)
+                        st.success("✅ Erfolgreich eingeloggt!")
+                        st.rerun()
+                    else:
+                        st.error("❌ Login fehlgeschlagen")
+                except Exception as e:
+                    st.error(f"❌ Fehler: {str(e)}")
+            else:
+                st.warning("⚠️ Bitte Email und Passwort eingeben")
+    
+    with tab2:
+        st.subheader("Registrieren")
+        email_signup = st.text_input("Email", key="signup_email")
+        password_signup = st.text_input("Passwort", type="password", key="signup_password")
+        password_confirm = st.text_input("Passwort bestätigen", type="password", key="signup_password_confirm")
+        
+        if st.button("📝 Registrieren", type="primary", use_container_width=True):
+            if email_signup and password_signup and password_confirm:
+                if password_signup != password_confirm:
+                    st.error("❌ Passwörter stimmen nicht überein")
+                elif len(password_signup) < 6:
+                    st.error("❌ Passwort muss mindestens 6 Zeichen lang sein")
+                else:
+                    try:
+                        response = supabase.auth.sign_up({
+                            "email": email_signup,
+                            "password": password_signup
+                        })
+                        
+                        if response.user:
+                            st.success("✅ Registrierung erfolgreich! Bitte logge dich ein.")
+                            # Initialisiere User-Settings in DB
+                            init_user_settings(email_signup)
+                        else:
+                            st.error("❌ Registrierung fehlgeschlagen")
+                    except Exception as e:
+                        st.error(f"❌ Fehler: {str(e)}")
+            else:
+                st.warning("⚠️ Bitte alle Felder ausfüllen")
+
+def logout():
+    """Logout User"""
+    try:
+        supabase.auth.sign_out()
+    except:
+        pass
+    st.session_state["user"] = None
+    st.session_state["is_pro"] = False
+    st.rerun()
 
 # =============================================================================
 # DATABASE FUNCTIONS
 # =============================================================================
 
-def load_settings(profile_name):
-    """Lade Einstellungen aus Supabase"""
+def init_user_settings(email):
+    """Initialisiere User-Settings in der Datenbank"""
     try:
-        response = supabase.table("user_settings").select("*").eq("user_id", profile_name).execute()
+        supabase.table("user_settings").insert({
+            "user_id": email,
+            "email": email,
+            "is_pro": False,
+            "watermark_text": "© CreatorOS",
+            "opacity": 180,
+            "padding": 50,
+            "output_format": "PNG",
+            "jpeg_quality": 85
+        }).execute()
+    except Exception as e:
+        print(f"Error initializing settings: {e}")
+
+def load_user_settings(email):
+    """Lade User-Settings aus der Datenbank"""
+    try:
+        response = supabase.table("user_settings").select("*").eq("user_id", email).execute()
         
         if response.data and len(response.data) > 0:
             settings = response.data[0]
-            
-            # Update Session State mit geladenen Werten
             st.session_state["is_pro"] = settings.get("is_pro", False)
-            st.session_state["watermark_type"] = settings.get("watermark_type", "Text")
-            st.session_state["position"] = settings.get("position", "Gekachelt (Tiled)")
             st.session_state["watermark_text"] = settings.get("watermark_text", "© CreatorOS")
-            st.session_state["size_factor_text"] = settings.get("size_factor_text", 1.0)
-            st.session_state["size_factor_logo"] = settings.get("size_factor_logo", 0.15)
             st.session_state["opacity"] = settings.get("opacity", 180)
             st.session_state["padding"] = settings.get("padding", 50)
-            st.session_state["filename_prefix"] = settings.get("filename_prefix", "")
             st.session_state["output_format"] = settings.get("output_format", "PNG")
             st.session_state["jpeg_quality"] = settings.get("jpeg_quality", 85)
-            
-            return True
-        return False
+        else:
+            # Settings existieren nicht, erstelle sie
+            init_user_settings(email)
     except Exception as e:
         st.error(f"Fehler beim Laden: {str(e)}")
-        return False
 
-def save_settings(profile_name):
-    """Speichere Einstellungen in Supabase"""
+def save_user_settings(email):
+    """Speichere User-Settings in der Datenbank"""
     try:
-        settings_data = {
-            "user_id": profile_name,
+        supabase.table("user_settings").upsert({
+            "user_id": email,
+            "email": email,
             "is_pro": st.session_state["is_pro"],
-            "watermark_type": st.session_state["watermark_type"],
-            "position": st.session_state["position"],
             "watermark_text": st.session_state["watermark_text"],
-            "size_factor_text": st.session_state["size_factor_text"],
-            "size_factor_logo": st.session_state["size_factor_logo"],
             "opacity": st.session_state["opacity"],
             "padding": st.session_state["padding"],
-            "filename_prefix": st.session_state["filename_prefix"],
             "output_format": st.session_state["output_format"],
             "jpeg_quality": st.session_state["jpeg_quality"]
-        }
-        
-        supabase.table("user_settings").upsert(settings_data).execute()
+        }).execute()
         return True
     except Exception as e:
         st.error(f"Fehler beim Speichern: {str(e)}")
         return False
 
+def get_all_users():
+    """Admin: Lade alle User"""
+    try:
+        response = supabase.table("user_settings").select("*").execute()
+        return response.data
+    except Exception as e:
+        st.error(f"Fehler: {str(e)}")
+        return []
+
+def upgrade_user_to_pro(email):
+    """Admin: Upgrade User zu PRO"""
+    try:
+        supabase.table("user_settings").update({"is_pro": True}).eq("email", email).execute()
+        return True
+    except Exception as e:
+        st.error(f"Fehler: {str(e)}")
+        return False
+
 # =============================================================================
-# HELPER FUNCTIONS
+# IMAGE PROCESSING FUNCTIONS
 # =============================================================================
 
 def remove_metadata(image):
-    """
-    Entfernt alle Metadaten (EXIF, etc.) aus einem Bild.
-    Korrigiert zuerst die Rotation basierend auf EXIF-Daten.
-    """
+    """Entfernt EXIF-Metadaten und korrigiert Rotation"""
     image = ImageOps.exif_transpose(image)
     data = list(image.getdata())
     new_image = Image.new(image.mode, image.size)
     new_image.putdata(data)
     return new_image
 
-def add_watermark(image, watermark_type, position="tiled", text=None, logo_image=None, opacity=180, padding=50, size_factor=0.15):
-    """Fügt ein Wasserzeichen über das Bild hinzu."""
+def add_watermark(image, text, opacity, padding, is_pro):
+    """Fügt Wasserzeichen hinzu"""
+    # Free-User: Erzwinge CreatorOS Branding
+    if not is_pro:
+        text = "Created with CreatorOS"
+    
     base_image = image.convert("RGBA")
     overlay = Image.new("RGBA", base_image.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(overlay)
     
-    if watermark_type == "text":
-        font_size = int(image.height * 0.05 * size_factor)
-        font = None
-        font_paths = [
-            "arial.ttf",
-            "/System/Library/Fonts/Helvetica.ttc",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        ]
-        
-        for font_path in font_paths:
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except:
-                continue
-        
-        if font is None:
-            font = ImageFont.load_default()
-        
-        text_color = (150, 150, 150, opacity)
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        if position == "tiled":
-            y_step = text_height + padding
-            x_step = text_width + padding
-            for y in range(0, base_image.height + y_step, y_step):
-                for x in range(0, base_image.width + x_step, x_step):
-                    draw.text((x, y), text, fill=text_color, font=font)
-        elif position == "center":
-            x = (base_image.width - text_width) // 2
-            y = (base_image.height - text_height) // 2
+    # Font laden
+    font_size = int(image.height * 0.05)
+    font = None
+    font_paths = [
+        "arial.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+    ]
+    
+    for font_path in font_paths:
+        try:
+            font = ImageFont.truetype(font_path, font_size)
+            break
+        except:
+            continue
+    
+    if font is None:
+        font = ImageFont.load_default()
+    
+    text_color = (150, 150, 150, opacity)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    # Gekachelt (Tiled)
+    y_step = text_height + padding
+    x_step = text_width + padding
+    
+    for y in range(0, base_image.height + y_step, y_step):
+        for x in range(0, base_image.width + x_step, x_step):
             draw.text((x, y), text, fill=text_color, font=font)
-        elif position == "bottom_right":
-            x = base_image.width - text_width - padding
-            y = base_image.height - text_height - padding
-            draw.text((x, y), text, fill=text_color, font=font)
-    else:
-        if logo_image is None:
-            return image
-        
-        logo = logo_image.convert("RGBA")
-        target_width = int(base_image.width * size_factor)
-        aspect_ratio = logo.height / logo.width
-        target_height = int(target_width * aspect_ratio)
-        logo = logo.resize((target_width, target_height), Image.Resampling.LANCZOS)
-        
-        logo_with_opacity = logo.copy()
-        if logo_with_opacity.mode == 'RGBA':
-            alpha = logo_with_opacity.split()[3]
-            alpha = alpha.point(lambda p: int(p * (opacity / 255)))
-            logo_with_opacity.putalpha(alpha)
-        else:
-            alpha = Image.new('L', logo.size, opacity)
-            logo_with_opacity.putalpha(alpha)
-        
-        logo_width = logo_with_opacity.width
-        logo_height = logo_with_opacity.height
-        
-        if position == "tiled":
-            y_step = logo_height + padding
-            x_step = logo_width + padding
-            for y in range(0, base_image.height, y_step):
-                for x in range(0, base_image.width, x_step):
-                    overlay.paste(logo_with_opacity, (x, y), logo_with_opacity)
-        elif position == "center":
-            x = (base_image.width - logo_width) // 2
-            y = (base_image.height - logo_height) // 2
-            overlay.paste(logo_with_opacity, (x, y), logo_with_opacity)
-        elif position == "bottom_right":
-            x = base_image.width - logo_width - padding
-            y = base_image.height - logo_height - padding
-            overlay.paste(logo_with_opacity, (x, y), logo_with_opacity)
     
     final_image = Image.alpha_composite(base_image, overlay)
     return final_image.convert("RGB")
 
-def format_bytes(bytes_size):
+def format_bytes(size):
     """Formatiert Bytes in lesbare Größe"""
-    if bytes_size < 1024:
-        return f"{bytes_size} B"
-    elif bytes_size < 1024 * 1024:
-        return f"{bytes_size / 1024:.1f} KB"
+    if size < 1024:
+        return f"{size} B"
+    elif size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
     else:
-        return f"{bytes_size / (1024 * 1024):.2f} MB"
+        return f"{size / (1024 * 1024):.2f} MB"
 
 # =============================================================================
-# SIDEBAR - Einstellungen
+# MAIN APP
 # =============================================================================
 
-st.sidebar.title("⚙️ Einstellungen")
-
-# Plan Status Badge
-is_pro = st.session_state["is_pro"]
-if is_pro:
-    st.sidebar.success("✨ PRO Plan aktiv")
+# Wenn nicht eingeloggt, zeige Login-Screen
+if st.session_state["user"] is None:
+    login_screen()
 else:
-    st.sidebar.info("🆓 Free Plan")
-
-# Profil-Bereich
-st.sidebar.subheader("👤 Profil")
-
-profile_name = st.sidebar.text_input(
-    "Profil-Name",
-    value=st.session_state["profile_name"],
-    key="profile_name",
-    help="Dein Profil-Name zum Laden/Speichern der Einstellungen"
-)
-
-col1, col2 = st.sidebar.columns(2)
-
-with col1:
-    if st.button("📥 Laden", use_container_width=True):
-        if load_settings(st.session_state["profile_name"]):
-            st.success("✅ Geladen!")
-            st.rerun()
-        else:
-            st.info("Keine gespeicherten Einstellungen gefunden.")
-
-with col2:
-    if st.button("💾 Speichern", use_container_width=True):
-        if save_settings(st.session_state["profile_name"]):
-            st.success("✅ Gespeichert!")
-
-st.sidebar.divider()
-
-# Wasserzeichen-Einstellungen
-st.sidebar.subheader("🎨 Wasserzeichen")
-
-# Wasserzeichen-Typ (eingeschränkt für Free-User)
-if is_pro:
-    watermark_type = st.sidebar.radio(
-        "Typ",
-        ["Text", "Bild/Logo"],
-        key="watermark_type",
-        help="Wähle zwischen Text oder deinem eigenen Logo"
-    )
-else:
-    st.sidebar.radio(
-        "Typ",
-        ["Text", "Bild/Logo"],
-        index=0,
-        key="watermark_type",
-        disabled=True,
-        help="🔒 Logo-Wasserzeichen nur im PRO Plan verfügbar"
-    )
-    watermark_type = "Text"
-
-position_labels = {
-    "Gekachelt (Tiled)": "tiled",
-    "Zentriert": "center",
-    "Unten Rechts": "bottom_right"
-}
-
-position_label = st.sidebar.selectbox(
-    "Positionierung",
-    list(position_labels.keys()),
-    key="position",
-    help="Wähle, wie das Wasserzeichen platziert werden soll"
-)
-position = position_labels[position_label]
-
-st.sidebar.divider()
-
-# Text oder Logo Input
-watermark_text = None
-logo_file = None
-logo_image = None
-
-if watermark_type == "Text":
-    # Free-User: Fester Text
-    if not is_pro:
-        watermark_text = st.sidebar.text_input(
+    user = st.session_state["user"]
+    user_email = user.email
+    is_pro = st.session_state["is_pro"]
+    is_admin = (user_email == ADMIN_EMAIL)
+    
+    # =============================================================================
+    # SIDEBAR
+    # =============================================================================
+    
+    st.sidebar.title("⚙️ CreatorOS")
+    
+    # User Info
+    st.sidebar.subheader("👤 User")
+    st.sidebar.text(user_email)
+    
+    if is_admin:
+        st.sidebar.error("👑 ADMIN")
+    elif is_pro:
+        st.sidebar.success("✨ PRO")
+    else:
+        st.sidebar.info("🆓 FREE")
+    
+    if st.sidebar.button("🚪 Logout", use_container_width=True):
+        logout()
+    
+    st.sidebar.divider()
+    
+    # Admin Panel
+    if is_admin:
+        with st.sidebar.expander("👑 Admin Dashboard", expanded=False):
+            st.subheader("User Management")
+            
+            all_users = get_all_users()
+            
+            if all_users:
+                df = pd.DataFrame(all_users)
+                st.dataframe(df[["email", "is_pro"]], use_container_width=True)
+                
+                st.divider()
+                
+                upgrade_email = st.text_input("User Email für Upgrade")
+                
+                if st.button("⬆️ Zum PRO machen"):
+                    if upgrade_email:
+                        if upgrade_user_to_pro(upgrade_email):
+                            st.success(f"✅ {upgrade_email} ist jetzt PRO!")
+                            st.rerun()
+                    else:
+                        st.warning("⚠️ Email eingeben")
+            else:
+                st.info("Keine User gefunden")
+        
+        st.sidebar.divider()
+    
+    # Einstellungen
+    st.sidebar.subheader("🎨 Wasserzeichen")
+    
+    # Free-User: Deaktivierte Inputs
+    if not is_pro and not is_admin:
+        st.sidebar.text_input(
             "Text",
             value="Created with CreatorOS",
-            key="watermark_text_disabled",
             disabled=True,
-            help="🔒 Custom Text nur im PRO Plan verfügbar"
+            help="🔒 PRO Feature"
         )
+        st.sidebar.warning("🔒 Custom Text nur im PRO Plan")
     else:
         watermark_text = st.sidebar.text_input(
             "Text",
             value=st.session_state["watermark_text"],
-            key="watermark_text",
-            help="Der Text, der als Wasserzeichen verwendet wird"
+            key="watermark_text"
         )
-else:
-    logo_file = st.sidebar.file_uploader(
-        "Logo hochladen",
-        type=["png", "jpg", "jpeg"],
-        help="Lade dein Logo als PNG oder JPG hoch"
-    )
-    if logo_file:
-        logo_image = Image.open(logo_file)
-        st.sidebar.image(logo_image, caption="Dein Logo", width=150)
-
-st.sidebar.divider()
-
-# Größen-Slider
-if watermark_type == "Text":
-    size_factor = st.sidebar.slider(
-        "Text-Größe",
-        min_value=0.5,
-        max_value=3.0,
-        value=st.session_state["size_factor_text"],
-        step=0.1,
-        key="size_factor_text",
-        help="Multiplier für die Textgröße"
-    )
-else:
-    size_factor = st.sidebar.slider(
-        "Logo-Größe",
-        min_value=0.05,
-        max_value=0.50,
-        value=st.session_state["size_factor_logo"],
-        step=0.05,
-        key="size_factor_logo",
-        help="Logo-Breite als % der Bildbreite"
-    )
-
-opacity = st.sidebar.slider(
-    "Deckkraft",
-    min_value=0,
-    max_value=255,
-    value=st.session_state["opacity"],
-    key="opacity",
-    help="0 = komplett transparent, 255 = komplett deckend"
-)
-
-if position == "tiled":
-    padding_help = "Abstand in Pixeln zwischen den Wasserzeichen"
-    padding_label = "Abstand"
-elif position == "bottom_right":
-    padding_help = "Abstand vom Rand in Pixeln"
-    padding_label = "Rand-Abstand"
-else:
-    padding_help = "Hat keine Auswirkung bei zentrierter Positionierung"
-    padding_label = "Abstand (nicht relevant)"
-
-padding = st.sidebar.slider(
-    padding_label,
-    min_value=10,
-    max_value=200,
-    value=st.session_state["padding"],
-    key="padding",
-    help=padding_help,
-    disabled=(position == "center")
-)
-
-st.sidebar.divider()
-
-# Export-Einstellungen
-with st.sidebar.expander("📤 Export", expanded=False):
-    filename_prefix = st.text_input(
-        "Dateiname-Präfix",
-        value=st.session_state["filename_prefix"],
-        key="filename_prefix",
-        help="Optional: Präfix für alle Dateien."
+    
+    opacity = st.sidebar.slider(
+        "Deckkraft",
+        0, 255,
+        st.session_state["opacity"],
+        key="opacity"
     )
     
-    output_format = st.selectbox(
+    padding = st.sidebar.slider(
+        "Abstand",
+        10, 200,
+        st.session_state["padding"],
+        key="padding"
+    )
+    
+    st.sidebar.divider()
+    
+    # Export
+    st.sidebar.subheader("📤 Export")
+    
+    output_format = st.sidebar.selectbox(
         "Format",
         ["PNG", "JPEG"],
         index=0 if st.session_state["output_format"] == "PNG" else 1,
-        key="output_format",
-        help="PNG = verlustfrei. JPEG = komprimiert."
+        key="output_format"
     )
     
-    jpeg_quality = st.session_state["jpeg_quality"]
     if output_format == "JPEG":
-        jpeg_quality = st.slider(
-            "JPEG-Qualität",
-            min_value=1,
-            max_value=100,
-            value=st.session_state["jpeg_quality"],
-            key="jpeg_quality",
-            help="Höhere Qualität = größere Dateien"
+        jpeg_quality = st.sidebar.slider(
+            "JPEG Qualität",
+            1, 100,
+            st.session_state["jpeg_quality"],
+            key="jpeg_quality"
         )
-
-st.sidebar.divider()
-
-# Admin: Pro-Status Simulation
-with st.sidebar.expander("🔧 Admin", expanded=False):
-    simulate_pro = st.checkbox(
-        "Simuliere PRO Status",
-        value=st.session_state["is_pro"],
-        help="Entwickler-Option: Aktiviert PRO-Features ohne Payment"
-    )
+    else:
+        jpeg_quality = 85
     
-    if simulate_pro != st.session_state["is_pro"]:
-        st.session_state["is_pro"] = simulate_pro
-        st.rerun()
-
-st.sidebar.divider()
-
-with st.sidebar.expander("ℹ️ Info"):
-    st.write("""
-    **CreatorOS v7.0 Freemium**
+    # Einstellungen speichern
+    if st.sidebar.button("💾 Einstellungen speichern", use_container_width=True):
+        if save_user_settings(user_email):
+            st.sidebar.success("✅ Gespeichert!")
     
-    **Free Plan:**
-    - 🔒 1 Bild pro Batch
-    - 🔒 Nur Text-Wasserzeichen
-    - 🔒 Fester Branding-Text
+    # =============================================================================
+    # MAIN AREA
+    # =============================================================================
     
-    **PRO Plan:**
-    - ✨ Unlimited Batch
-    - ✨ Logo-Wasserzeichen
-    - ✨ Custom Text
-    - ✨ Cloud-Speicherung
-    """)
-
-# =============================================================================
-# MAIN AREA
-# =============================================================================
-
-st.title("🔒 CreatorOS - Privacy & Watermark Bot")
-st.write("Schütze deine Bilder mit Metadaten-Entfernung und professionellen Wasserzeichen.")
-
-# Free Plan Warnung
-if not is_pro:
-    st.warning("🔒 **Free Plan:** Nur 1 Bild wird verarbeitet. Upgrade für Batch-Support und weitere Features!")
-
-st.divider()
-
-# Layout - Zwei Spalten
-col_left, col_right = st.columns([1, 1])
-
-# =============================================================================
-# LINKE SPALTE - Upload & Vorschau
-# =============================================================================
-
-with col_left:
-    st.subheader("📤 Upload")
+    st.title("🔒 CreatorOS - Privacy & Watermark Bot")
+    st.write("Schütze deine Bilder mit Metadaten-Entfernung und Wasserzeichen.")
     
-    uploaded_files = st.file_uploader(
-        "Bilder hochladen",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-        help="JPG, JPEG oder PNG"
-    )
+    # Free-User Warnung
+    if not is_pro and not is_admin:
+        st.warning("🔒 **FREE Plan:** Nur 1 Bild pro Batch | Fester Wasserzeichen-Text | Upgrade für mehr Features!")
     
-    if uploaded_files:
-        # Free-User: Beschränke auf 1 Bild
-        if not is_pro and len(uploaded_files) > 1:
-            st.info(f"📋 {len(uploaded_files)} Bilder hochgeladen, aber nur das erste wird verarbeitet (Free Plan).")
-            files_to_process = uploaded_files[:1]
-        else:
-            files_to_process = uploaded_files
+    st.divider()
+    
+    # Layout
+    col_left, col_right = st.columns([1, 1])
+    
+    # =============================================================================
+    # LINKE SPALTE - Upload & Preview
+    # =============================================================================
+    
+    with col_left:
+        st.subheader("📤 Upload")
         
-        st.success(f"✅ {len(files_to_process)} Bild(er) wird/werden verarbeitet")
+        uploaded_files = st.file_uploader(
+            "Bilder hochladen",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True
+        )
         
-        can_preview = False
-        if watermark_type == "Text" and watermark_text:
-            can_preview = True
-        elif watermark_type == "Bild/Logo" and logo_image:
-            can_preview = True
-        
-        if can_preview:
+        if uploaded_files:
+            # Free-User: Nur 1 Bild
+            if not is_pro and not is_admin and len(uploaded_files) > 1:
+                st.info(f"📋 {len(uploaded_files)} hochgeladen, aber nur 1 wird verarbeitet (FREE)")
+                files_to_process = uploaded_files[:1]
+            else:
+                files_to_process = uploaded_files
+            
+            st.success(f"✅ {len(files_to_process)} Bild(er)")
+            
+            # Live-Vorschau
             st.divider()
-            st.subheader("👁️ Live-Vorschau")
+            st.subheader("👁️ Vorschau")
             
             first_file = files_to_process[0]
-            preview_image = Image.open(first_file)
+            preview_img = Image.open(first_file)
             first_file.seek(0)
             
-            cleaned_preview = remove_metadata(preview_image)
-            watermarked_preview = add_watermark(
-                cleaned_preview,
-                watermark_type.lower().replace("/", "_"),
-                position=position,
-                text=watermark_text,
-                logo_image=logo_image,
-                opacity=opacity,
-                padding=padding,
-                size_factor=size_factor
+            cleaned = remove_metadata(preview_img)
+            watermarked = add_watermark(
+                cleaned,
+                st.session_state["watermark_text"] if (is_pro or is_admin) else "Created with CreatorOS",
+                st.session_state["opacity"],
+                st.session_state["padding"],
+                is_pro or is_admin
             )
             
-            tab1, tab2 = st.tabs(["Original", "Mit Wasserzeichen"])
+            tab1, tab2 = st.tabs(["Original", "Wasserzeichen"])
             
             with tab1:
-                st.image(preview_image, caption=first_file.name, use_container_width=True)
+                st.image(preview_img, use_container_width=True)
             
             with tab2:
-                st.image(watermarked_preview, caption="Vorschau", use_container_width=True)
+                st.image(watermarked, use_container_width=True)
                 
-                preview_buffer = io.BytesIO()
+                # Dateigröße
+                buf = io.BytesIO()
                 if output_format == "PNG":
-                    watermarked_preview.save(preview_buffer, format="PNG")
+                    watermarked.save(buf, format="PNG")
                 else:
-                    watermarked_preview.save(preview_buffer, format="JPEG", quality=jpeg_quality, optimize=True)
+                    watermarked.save(buf, format="JPEG", quality=jpeg_quality, optimize=True)
                 
-                file_size = len(preview_buffer.getvalue())
-                st.caption(f"📊 Dateigröße: {format_bytes(file_size)}")
+                st.caption(f"📊 Größe: {format_bytes(len(buf.getvalue()))}")
         else:
-            if watermark_type == "Bild/Logo" and not logo_image:
-                st.warning("⚠️ Bitte lade ein Logo hoch.")
-    else:
-        st.info("👆 Bitte lade Bilder hoch.")
-
-# =============================================================================
-# RECHTE SPALTE - Verarbeitung
-# =============================================================================
-
-with col_right:
-    st.subheader("🚀 Verarbeitung")
+            st.info("👆 Bilder hochladen")
     
-    if uploaded_files:
-        # Free-User: Beschränke auf 1 Bild
-        if not is_pro and len(uploaded_files) > 1:
-            files_to_process = uploaded_files[:1]
-        else:
-            files_to_process = uploaded_files
+    # =============================================================================
+    # RECHTE SPALTE - Processing
+    # =============================================================================
+    
+    with col_right:
+        st.subheader("🚀 Verarbeitung")
         
-        can_process = False
-        if watermark_type == "Text" and watermark_text:
-            can_process = True
-        elif watermark_type == "Bild/Logo" and logo_image:
-            can_process = True
-        
-        if not can_process:
-            st.warning("⚠️ Bitte konfiguriere das Wasserzeichen.")
-        else:
+        if uploaded_files:
+            # Free-User: Nur 1 Bild
+            if not is_pro and not is_admin and len(uploaded_files) > 1:
+                files_to_process = uploaded_files[:1]
+            else:
+                files_to_process = uploaded_files
+            
             if len(files_to_process) > 1:
                 st.info(f"📋 {len(files_to_process)} Bilder bereit")
             
-            if st.button("🚀 Alle verarbeiten", type="primary", use_container_width=True):
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+            if st.button("🚀 Verarbeiten & ZIP Download", type="primary", use_container_width=True):
+                progress = st.progress(0)
+                status = st.empty()
                 
-                processed_images = []
+                processed = []
                 
-                for idx, uploaded_file in enumerate(files_to_process):
-                    status_text.text(f"⏳ {idx + 1}/{len(files_to_process)}: {uploaded_file.name}")
+                for idx, file in enumerate(files_to_process):
+                    status.text(f"⏳ {idx+1}/{len(files_to_process)}: {file.name}")
                     
-                    image = Image.open(uploaded_file)
-                    cleaned_image = remove_metadata(image)
-                    
-                    final_image = add_watermark(
-                        cleaned_image,
-                        watermark_type.lower().replace("/", "_"),
-                        position=position,
-                        text=watermark_text,
-                        logo_image=logo_image,
-                        opacity=opacity,
-                        padding=padding,
-                        size_factor=size_factor
+                    img = Image.open(file)
+                    cleaned = remove_metadata(img)
+                    final = add_watermark(
+                        cleaned,
+                        st.session_state["watermark_text"] if (is_pro or is_admin) else "Created with CreatorOS",
+                        st.session_state["opacity"],
+                        st.session_state["padding"],
+                        is_pro or is_admin
                     )
                     
-                    processed_images.append({
-                        'image': final_image,
-                        'original_filename': uploaded_file.name
+                    processed.append({
+                        'image': final,
+                        'filename': file.name
                     })
                     
-                    progress_bar.progress((idx + 1) / len(files_to_process))
-                    uploaded_file.seek(0)
+                    progress.progress((idx + 1) / len(files_to_process))
+                    file.seek(0)
                 
-                status_text.empty()
-                progress_bar.empty()
+                status.empty()
+                progress.empty()
                 
-                st.success(f"🎉 {len(processed_images)} Bild(er) verarbeitet!")
+                st.success(f"🎉 {len(processed)} Bild(er) verarbeitet!")
                 
-                zip_buffer = io.BytesIO()
-                file_extension = "png" if output_format == "PNG" else "jpg"
+                # ZIP erstellen
+                zip_buf = io.BytesIO()
+                ext = "png" if output_format == "PNG" else "jpg"
                 
-                with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-                    for idx, item in enumerate(processed_images):
-                        img_buffer = io.BytesIO()
+                with zipfile.ZipFile(zip_buf, 'w', zipfile.ZIP_DEFLATED) as zf:
+                    for idx, item in enumerate(processed):
+                        img_buf = io.BytesIO()
                         
                         if output_format == "PNG":
-                            item['image'].save(img_buffer, format="PNG")
+                            item['image'].save(img_buf, format="PNG")
                         else:
-                            item['image'].save(img_buffer, format="JPEG", quality=jpeg_quality, optimize=True)
+                            item['image'].save(img_buf, format="JPEG", quality=jpeg_quality, optimize=True)
                         
-                        img_bytes = img_buffer.getvalue()
-                        
-                        if filename_prefix:
-                            new_filename = f"{filename_prefix}{idx+1:03d}.{file_extension}"
-                        else:
-                            original_name_without_ext = item['original_filename'].rsplit('.', 1)[0]
-                            new_filename = f"{original_name_without_ext}.{file_extension}"
-                        
-                        zip_file.writestr(new_filename, img_bytes)
+                        name = item['filename'].rsplit('.', 1)[0]
+                        zf.writestr(f"{name}.{ext}", img_buf.getvalue())
                 
-                zip_buffer.seek(0)
+                zip_buf.seek(0)
                 
-                zip_size = len(zip_buffer.getvalue())
-                st.info(f"📦 ZIP: {format_bytes(zip_size)}")
+                st.info(f"📦 ZIP: {format_bytes(len(zip_buf.getvalue()))}")
                 
                 st.download_button(
-                    label="⬇️ ZIP herunterladen",
-                    data=zip_buffer,
-                    file_name="creatorOS_processed.zip",
-                    mime="application/zip",
+                    "⬇️ ZIP herunterladen",
+                    zip_buf,
+                    "creatorOS_processed.zip",
+                    "application/zip",
                     use_container_width=True
                 )
                 
+                # Vorschau
                 st.divider()
-                st.subheader("🖼️ Vorschau")
+                st.subheader("🖼️ Galerie")
                 
-                preview_count = min(len(processed_images), 6)
-                
-                if len(processed_images) > 6:
-                    st.caption(f"Zeige {preview_count} von {len(processed_images)}")
-                
-                for i in range(0, preview_count, 2):
+                for i in range(0, min(len(processed), 4), 2):
                     cols = st.columns(2)
                     for j in range(2):
-                        if i + j < preview_count:
+                        if i + j < len(processed):
                             with cols[j]:
                                 st.image(
-                                    processed_images[i + j]['image'],
-                                    caption=processed_images[i + j]['original_filename'],
+                                    processed[i + j]['image'],
+                                    caption=processed[i + j]['filename'],
                                     use_container_width=True
                                 )
-    else:
-        st.info("Warte auf Upload...")
-
-st.divider()
-st.caption("CreatorOS v7.0 Freemium | Cloud-Powered 🚀")
+        else:
+            st.info("Warte auf Upload...")
+    
+    st.divider()
+    st.caption("CreatorOS v9.0 | Made with ❤️ for Creators")
