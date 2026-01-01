@@ -19,9 +19,39 @@ st.set_page_config(
 # CONSTANTS
 # =============================================================================
 ADMIN_EMAIL = "janick@icanhasbucket.de"
-PAYMENT_LINK = "https://buy.stripe.com/your-payment-link"  # Hier deinen Stripe-Link einfügen
-IMPRESSUM_LINK = "https://creatordeckapp.com/impressum"
-DATENSCHUTZ_LINK = "https://creatordeckapp.com/datenschutz"
+PAYMENT_LINK = "https://buy.stripe.com/28E8wO0W59Y46rM8rG6J200"
+IMPRESSUM_TEXT = """
+**Angaben gemäß § 5 TMG:**
+
+CreatorDeck / Janick Thum
+[Deine Adresse hier]
+
+**Kontakt:**  
+E-Mail: janick@icanhasbucket.de
+
+**Verantwortlich für den Inhalt nach § 55 Abs. 2 RStV:**  
+Janick Thum  
+[Adresse]
+"""
+
+DATENSCHUTZ_TEXT = """
+**Datenschutzerklärung für CreatorDeck**
+
+**1. Datenerhebung**  
+Wir erheben nur die für die Nutzung der App notwendigen Daten (E-Mail, Passwort verschlüsselt).
+
+**2. Nutzung**  
+Ihre hochgeladenen Bilder werden nicht gespeichert und verbleiben nur temporär im RAM während der Verarbeitung.
+
+**3. Supabase**  
+Wir nutzen Supabase für Authentifizierung und Einstellungen. Details: https://supabase.com/privacy
+
+**4. Ihre Rechte**  
+Sie haben jederzeit das Recht auf Auskunft, Löschung und Berichtigung Ihrer Daten.
+
+**Kontakt:**  
+janick@icanhasbucket.de
+"""
 
 # =============================================================================
 # SUPABASE SETUP
@@ -60,6 +90,24 @@ if "output_format" not in st.session_state:
 
 if "jpeg_quality" not in st.session_state:
     st.session_state["jpeg_quality"] = 85
+
+# =============================================================================
+# DIALOG FUNCTIONS
+# =============================================================================
+
+@st.dialog("📄 Impressum")
+def show_impressum():
+    """Zeige Impressum im Dialog"""
+    st.markdown(IMPRESSUM_TEXT)
+    if st.button("Schließen", use_container_width=True):
+        st.rerun()
+
+@st.dialog("🔒 Datenschutz")
+def show_datenschutz():
+    """Zeige Datenschutzerklärung im Dialog"""
+    st.markdown(DATENSCHUTZ_TEXT)
+    if st.button("Schließen", use_container_width=True):
+        st.rerun()
 
 # =============================================================================
 # AUTH FUNCTIONS
@@ -131,7 +179,15 @@ def login_screen():
     
     # Footer auf Login-Seite
     st.divider()
-    st.markdown(f"[Impressum]({IMPRESSUM_LINK}) • [Datenschutz]({DATENSCHUTZ_LINK})")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("📄 Impressum", use_container_width=True):
+            show_impressum()
+    with col2:
+        if st.button("🔒 Datenschutz", use_container_width=True):
+            show_datenschutz()
+    
     st.caption("© 2025 CreatorDeck")
 
 def logout():
@@ -219,6 +275,15 @@ def upgrade_user_to_pro(email):
         st.error(f"Fehler: {str(e)}")
         return False
 
+def downgrade_user_from_pro(email):
+    """Admin: Downgrade User von PRO"""
+    try:
+        supabase.table("user_settings").update({"is_pro": False}).eq("email", email).execute()
+        return True
+    except Exception as e:
+        st.error(f"Fehler: {str(e)}")
+        return False
+
 # =============================================================================
 # IMAGE PROCESSING FUNCTIONS
 # =============================================================================
@@ -248,6 +313,7 @@ def add_watermark(image, text, opacity, padding, is_pro):
         "arial.ttf",
         "/System/Library/Fonts/Helvetica.ttc",
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ]
     
     for font_path in font_paths:
@@ -333,15 +399,27 @@ else:
                 
                 st.divider()
                 
-                upgrade_email = st.text_input("User Email für Upgrade")
+                upgrade_email = st.text_input("User Email", key="admin_email_input")
                 
-                if st.button("⬆️ Zum PRO machen"):
-                    if upgrade_email:
-                        if upgrade_user_to_pro(upgrade_email):
-                            st.success(f"✅ {upgrade_email} ist jetzt PRO!")
-                            st.rerun()
-                    else:
-                        st.warning("⚠️ Email eingeben")
+                col_up, col_down = st.columns(2)
+                
+                with col_up:
+                    if st.button("⬆️ PRO", use_container_width=True):
+                        if upgrade_email:
+                            if upgrade_user_to_pro(upgrade_email):
+                                st.success(f"✅ {upgrade_email} → PRO!")
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Email eingeben")
+                
+                with col_down:
+                    if st.button("⬇️ FREE", use_container_width=True):
+                        if upgrade_email:
+                            if downgrade_user_from_pro(upgrade_email):
+                                st.success(f"✅ {upgrade_email} → FREE!")
+                                st.rerun()
+                        else:
+                            st.warning("⚠️ Email eingeben")
             else:
                 st.info("Keine User gefunden")
         
@@ -421,10 +499,15 @@ else:
     
     # Footer
     st.sidebar.divider()
-    st.sidebar.markdown(
-        f"[Impressum]({IMPRESSUM_LINK}) • [Datenschutz]({DATENSCHUTZ_LINK})",
-        unsafe_allow_html=True
-    )
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("📄 Impressum", use_container_width=True, key="impressum_sidebar"):
+            show_impressum()
+    with col2:
+        if st.button("🔒 Datenschutz", use_container_width=True, key="datenschutz_sidebar"):
+            show_datenschutz()
+    
     st.sidebar.caption("© 2025 CreatorDeck")
     
     # =============================================================================
@@ -597,4 +680,4 @@ else:
             st.info("Warte auf Upload...")
     
     st.divider()
-    st.caption("CreatorOS v10.0 | Made with ❤️ for Creators")
+    st.caption("CreatorOS v10.0 Final | Made with ❤️ for Creators")
