@@ -6,7 +6,7 @@ import zipfile
 from supabase import create_client, Client
 
 # =============================================================================
-# PAGE CONFIG - Muss als ERSTES kommen
+# PAGE CONFIG - MUSS ALS ERSTES KOMMEN
 # =============================================================================
 st.set_page_config(
     page_title="CreatorOS",
@@ -116,31 +116,20 @@ def remove_metadata(image):
     Entfernt alle Metadaten (EXIF, etc.) aus einem Bild.
     Korrigiert zuerst die Rotation basierend auf EXIF-Daten.
     """
-    # Auto-Rotation basierend auf EXIF-Daten (BEVOR wir sie löschen)
     image = ImageOps.exif_transpose(image)
-    
-    # Entferne Metadaten durch Neuerstellen des Bildes
     data = list(image.getdata())
     new_image = Image.new(image.mode, image.size)
     new_image.putdata(data)
     return new_image
 
 def add_watermark(image, watermark_type, position="tiled", text=None, logo_image=None, opacity=180, padding=50, size_factor=0.15):
-    """
-    Fügt ein Wasserzeichen über das Bild hinzu.
-    """
-    # Konvertiere zu RGBA
+    """Fügt ein Wasserzeichen über das Bild hinzu."""
     base_image = image.convert("RGBA")
-    
-    # Erstelle transparentes Overlay
     overlay = Image.new("RGBA", base_image.size, (255, 255, 255, 0))
     draw = ImageDraw.Draw(overlay)
     
     if watermark_type == "text":
-        # TEXT-WASSERZEICHEN
         font_size = int(image.height * 0.05 * size_factor)
-        
-        # Versuche TrueType Font zu laden
         font = None
         font_paths = [
             "arial.ttf",
@@ -164,27 +153,21 @@ def add_watermark(image, watermark_type, position="tiled", text=None, logo_image
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Positionierung
         if position == "tiled":
             y_step = text_height + padding
             x_step = text_width + padding
-            
             for y in range(0, base_image.height + y_step, y_step):
                 for x in range(0, base_image.width + x_step, x_step):
                     draw.text((x, y), text, fill=text_color, font=font)
-        
         elif position == "center":
             x = (base_image.width - text_width) // 2
             y = (base_image.height - text_height) // 2
             draw.text((x, y), text, fill=text_color, font=font)
-        
         elif position == "bottom_right":
             x = base_image.width - text_width - padding
             y = base_image.height - text_height - padding
             draw.text((x, y), text, fill=text_color, font=font)
-    
     else:
-        # LOGO-WASSERZEICHEN
         if logo_image is None:
             return image
         
@@ -206,20 +189,16 @@ def add_watermark(image, watermark_type, position="tiled", text=None, logo_image
         logo_width = logo_with_opacity.width
         logo_height = logo_with_opacity.height
         
-        # Positionierung
         if position == "tiled":
             y_step = logo_height + padding
             x_step = logo_width + padding
-            
             for y in range(0, base_image.height, y_step):
                 for x in range(0, base_image.width, x_step):
                     overlay.paste(logo_with_opacity, (x, y), logo_with_opacity)
-        
         elif position == "center":
             x = (base_image.width - logo_width) // 2
             y = (base_image.height - logo_height) // 2
             overlay.paste(logo_with_opacity, (x, y), logo_with_opacity)
-        
         elif position == "bottom_right":
             x = base_image.width - logo_width - padding
             y = base_image.height - logo_height - padding
@@ -238,12 +217,14 @@ def format_bytes(bytes_size):
         return f"{bytes_size / (1024 * 1024):.2f} MB"
 
 # =============================================================================
-# SIDEBAR - Profil & Einstellungen
+# SIDEBAR - Einstellungen
 # =============================================================================
 
-st.sidebar.title("👤 Profil")
+st.sidebar.title("⚙️ Einstellungen")
 
-# Profil-Name Input
+# Profil-Bereich
+st.sidebar.subheader("👤 Profil")
+
 profile_name = st.sidebar.text_input(
     "Profil-Name",
     value=st.session_state["profile_name"],
@@ -251,7 +232,6 @@ profile_name = st.sidebar.text_input(
     help="Dein Profil-Name zum Laden/Speichern der Einstellungen"
 )
 
-# Load/Save Buttons
 col1, col2 = st.sidebar.columns(2)
 
 with col1:
@@ -268,17 +248,17 @@ with col2:
             st.success("✅ Gespeichert!")
 
 st.sidebar.divider()
-st.sidebar.title("⚙️ Einstellungen")
 
-# Wasserzeichen-Typ Auswahl
+# Wasserzeichen-Einstellungen
+st.sidebar.subheader("🎨 Wasserzeichen")
+
 watermark_type = st.sidebar.radio(
-    "Wasserzeichen-Typ",
+    "Typ",
     ["Text", "Bild/Logo"],
     key="watermark_type",
     help="Wähle zwischen Text oder deinem eigenen Logo"
 )
 
-# Positionierung Auswahl
 position_labels = {
     "Gekachelt (Tiled)": "tiled",
     "Zentriert": "center",
@@ -295,14 +275,14 @@ position = position_labels[position_label]
 
 st.sidebar.divider()
 
-# Text-Input oder Logo-Upload basierend auf Typ
+# Text oder Logo Input
 watermark_text = None
 logo_file = None
 logo_image = None
 
 if watermark_type == "Text":
     watermark_text = st.sidebar.text_input(
-        "Wasserzeichen-Text",
+        "Text",
         value=st.session_state["watermark_text"],
         key="watermark_text",
         help="Der Text, der als Wasserzeichen verwendet wird"
@@ -341,7 +321,6 @@ else:
         help="Logo-Breite als % der Bildbreite"
     )
 
-# Transparenz-Slider
 opacity = st.sidebar.slider(
     "Deckkraft",
     min_value=0,
@@ -351,10 +330,9 @@ opacity = st.sidebar.slider(
     help="0 = komplett transparent, 255 = komplett deckend"
 )
 
-# Padding-Slider
 if position == "tiled":
     padding_help = "Abstand in Pixeln zwischen den Wasserzeichen"
-    padding_label = "Abstand zwischen Wasserzeichen"
+    padding_label = "Abstand"
 elif position == "bottom_right":
     padding_help = "Abstand vom Rand in Pixeln"
     padding_label = "Rand-Abstand"
@@ -375,20 +353,20 @@ padding = st.sidebar.slider(
 st.sidebar.divider()
 
 # Export-Einstellungen
-with st.sidebar.expander("📤 Export-Einstellungen", expanded=False):
+with st.sidebar.expander("📤 Export", expanded=False):
     filename_prefix = st.text_input(
         "Dateiname-Präfix",
         value=st.session_state["filename_prefix"],
         key="filename_prefix",
-        help="Optional: Präfix für alle Dateien. Leer lassen für Originalnamen."
+        help="Optional: Präfix für alle Dateien."
     )
     
     output_format = st.selectbox(
-        "Ausgabe-Format",
+        "Format",
         ["PNG", "JPEG"],
         index=0 if st.session_state["output_format"] == "PNG" else 1,
         key="output_format",
-        help="PNG = verlustfrei, größere Dateien. JPEG = komprimiert, kleinere Dateien."
+        help="PNG = verlustfrei. JPEG = komprimiert."
     )
     
     jpeg_quality = st.session_state["jpeg_quality"]
@@ -399,44 +377,31 @@ with st.sidebar.expander("📤 Export-Einstellungen", expanded=False):
             max_value=100,
             value=st.session_state["jpeg_quality"],
             key="jpeg_quality",
-            help="Höhere Qualität = bessere Bildqualität, größere Dateien"
+            help="Höhere Qualität = größere Dateien"
         )
 
 st.sidebar.divider()
 
-# Info-Box
-st.sidebar.info("💡 **Tipp:** Lade dein Profil, um deine gespeicherten Einstellungen zu verwenden.")
-
-# Zusätzliche Infos
-with st.sidebar.expander("ℹ️ Über CreatorOS"):
+with st.sidebar.expander("ℹ️ Info"):
     st.write("""
     **CreatorOS v6.0**
     
-    Features:
-    - ✅ Profil-System (Cloud-Speicherung)
-    - ✅ EXIF-Metadaten-Entfernung
-    - ✅ Auto-Rotation Korrektur
-    - ✅ Text & Logo-Wasserzeichen
-    - ✅ Flexible Positionierung
-    - ✅ Export-Einstellungen
-    - ✅ Live-Vorschau
-    - ✅ Batch-Verarbeitung
-    
-    Powered by Supabase 🚀
+    - 🔒 EXIF-Metadaten-Entfernung
+    - 🎨 Text & Logo-Wasserzeichen
+    - ☁️ Cloud-Speicherung (Supabase)
+    - 📦 Batch-Verarbeitung
+    - 🚀 Live-Vorschau
     """)
 
 # =============================================================================
-# MAIN AREA - Header
+# MAIN AREA
 # =============================================================================
 
 st.title("🔒 CreatorOS - Privacy & Watermark Bot")
 st.write("Schütze deine Bilder mit Metadaten-Entfernung und professionellen Wasserzeichen.")
 st.divider()
 
-# =============================================================================
-# LAYOUT - Zwei Spalten
-# =============================================================================
-
+# Layout - Zwei Spalten
 col_left, col_right = st.columns([1, 1])
 
 # =============================================================================
@@ -447,10 +412,10 @@ with col_left:
     st.subheader("📤 Upload")
     
     uploaded_files = st.file_uploader(
-        "Lade ein oder mehrere Bilder hoch",
+        "Bilder hochladen",
         type=["jpg", "jpeg", "png"],
         accept_multiple_files=True,
-        help="Unterstützte Formate: JPG, JPEG, PNG"
+        help="JPG, JPEG oder PNG"
     )
     
     if uploaded_files:
@@ -497,25 +462,15 @@ with col_left:
                     watermarked_preview.save(preview_buffer, format="JPEG", quality=jpeg_quality, optimize=True)
                 
                 file_size = len(preview_buffer.getvalue())
-                st.caption(f"📊 Geschätzte Dateigröße: {format_bytes(file_size)}")
-        
+                st.caption(f"📊 Dateigröße: {format_bytes(file_size)}")
         else:
             if watermark_type == "Bild/Logo" and not logo_image:
-                st.warning("⚠️ Bitte lade ein Logo in der Sidebar hoch.")
-    
+                st.warning("⚠️ Bitte lade ein Logo hoch.")
     else:
-        st.info("👆 Bitte lade ein oder mehrere Bilder hoch, um zu beginnen.")
-        
-        with st.expander("💡 Schnellstart"):
-            st.markdown("""
-            **In 3 Schritten:**
-            1. Wasserzeichen konfigurieren (Sidebar)
-            2. Bilder hochladen
-            3. Verarbeiten & Download
-            """)
+        st.info("👆 Bitte lade Bilder hoch.")
 
 # =============================================================================
-# RECHTE SPALTE - Verarbeitung & Download
+# RECHTE SPALTE - Verarbeitung
 # =============================================================================
 
 with col_right:
@@ -529,19 +484,19 @@ with col_right:
             can_process = True
         
         if not can_process:
-            st.warning("⚠️ Bitte konfiguriere das Wasserzeichen in der Sidebar.")
+            st.warning("⚠️ Bitte konfiguriere das Wasserzeichen.")
         else:
             if len(uploaded_files) > 1:
-                st.info(f"📋 {len(uploaded_files)} Bilder bereit zur Verarbeitung")
+                st.info(f"📋 {len(uploaded_files)} Bilder bereit")
             
-            if st.button("🚀 Alle Bilder verarbeiten", type="primary", use_container_width=True):
+            if st.button("🚀 Alle verarbeiten", type="primary", use_container_width=True):
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
                 processed_images = []
                 
                 for idx, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"⏳ Verarbeite {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}")
+                    status_text.text(f"⏳ {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}")
                     
                     image = Image.open(uploaded_file)
                     cleaned_image = remove_metadata(image)
@@ -568,7 +523,7 @@ with col_right:
                 status_text.empty()
                 progress_bar.empty()
                 
-                st.success(f"🎉 {len(processed_images)} Bild(er) erfolgreich verarbeitet!")
+                st.success(f"🎉 {len(processed_images)} Bild(er) verarbeitet!")
                 
                 zip_buffer = io.BytesIO()
                 file_extension = "png" if output_format == "PNG" else "jpg"
@@ -595,7 +550,7 @@ with col_right:
                 zip_buffer.seek(0)
                 
                 zip_size = len(zip_buffer.getvalue())
-                st.info(f"📦 ZIP-Archiv: {format_bytes(zip_size)}")
+                st.info(f"📦 ZIP: {format_bytes(zip_size)}")
                 
                 st.download_button(
                     label="⬇️ ZIP herunterladen",
@@ -606,12 +561,12 @@ with col_right:
                 )
                 
                 st.divider()
-                
                 st.subheader("🖼️ Vorschau")
+                
                 preview_count = min(len(processed_images), 6)
                 
                 if len(processed_images) > 6:
-                    st.caption(f"Zeige {preview_count} von {len(processed_images)} Bildern")
+                    st.caption(f"Zeige {preview_count} von {len(processed_images)}")
                 
                 for i in range(0, preview_count, 2):
                     cols = st.columns(2)
@@ -624,24 +579,7 @@ with col_right:
                                     use_container_width=True
                                 )
     else:
-        st.info("Warte auf Bilder-Upload...")
-        
-        with st.expander("✨ Features"):
-            st.markdown("""
-            **Privacy:**
-            - EXIF-Metadaten entfernen
-            - GPS-Daten löschen
-            - Auto-Rotation Korrektur
-            
-            **Wasserzeichen:**
-            - Text & Logo Support
-            - 3 Positionierungs-Modi
-            - Cloud-Speicherung
-            
-            **Export:**
-            - PNG/JPEG Format
-            - Batch-Verarbeitung
-            """)
+        st.info("Warte auf Upload...")
 
 st.divider()
 st.caption("CreatorOS v6.0 | Cloud-Powered 🚀")
