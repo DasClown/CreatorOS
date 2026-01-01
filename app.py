@@ -19,6 +19,9 @@ st.set_page_config(
 # CONSTANTS
 # =============================================================================
 ADMIN_EMAIL = "janick@icanhasbucket.de"
+PAYMENT_LINK = "https://buy.stripe.com/your-payment-link"  # Hier deinen Stripe-Link einfügen
+IMPRESSUM_LINK = "https://creatordeckapp.com/impressum"
+DATENSCHUTZ_LINK = "https://creatordeckapp.com/datenschutz"
 
 # =============================================================================
 # SUPABASE SETUP
@@ -125,6 +128,11 @@ def login_screen():
                         st.error(f"❌ Fehler: {str(e)}")
             else:
                 st.warning("⚠️ Bitte alle Felder ausfüllen")
+    
+    # Footer auf Login-Seite
+    st.divider()
+    st.markdown(f"[Impressum]({IMPRESSUM_LINK}) • [Datenschutz]({DATENSCHUTZ_LINK})")
+    st.caption("© 2025 CreatorDeck")
 
 def logout():
     """Logout User"""
@@ -399,6 +407,26 @@ else:
         if save_user_settings(user_email):
             st.sidebar.success("✅ Gespeichert!")
     
+    st.sidebar.divider()
+    
+    # Upgrade-Bereich für Free-User
+    if not is_pro and not is_admin:
+        st.sidebar.info("🔒 **Free Plan**\n\nLimitiert auf 1 Bild pro Batch")
+        st.sidebar.link_button(
+            "🚀 Upgrade auf PRO",
+            PAYMENT_LINK,
+            use_container_width=True
+        )
+        st.sidebar.divider()
+    
+    # Footer
+    st.sidebar.divider()
+    st.sidebar.markdown(
+        f"[Impressum]({IMPRESSUM_LINK}) • [Datenschutz]({DATENSCHUTZ_LINK})",
+        unsafe_allow_html=True
+    )
+    st.sidebar.caption("© 2025 CreatorDeck")
+    
     # =============================================================================
     # MAIN AREA
     # =============================================================================
@@ -569,4 +597,4 @@ else:
             st.info("Warte auf Upload...")
     
     st.divider()
-    st.caption("CreatorOS v9.0 | Made with ❤️ for Creators")
+    st.caption("CreatorOS v10.0 | Made with ❤️ for Creators")
