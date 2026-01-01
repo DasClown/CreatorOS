@@ -36,6 +36,7 @@ def init_session_state():
     """Initialisiere Session State mit Default-Werten"""
     defaults = {
         "profile_name": "demo",
+        "is_pro": False,
         "watermark_type": "Text",
         "position": "Gekachelt (Tiled)",
         "watermark_text": "© CreatorOS",
@@ -67,6 +68,7 @@ def load_settings(profile_name):
             settings = response.data[0]
             
             # Update Session State mit geladenen Werten
+            st.session_state["is_pro"] = settings.get("is_pro", False)
             st.session_state["watermark_type"] = settings.get("watermark_type", "Text")
             st.session_state["position"] = settings.get("position", "Gekachelt (Tiled)")
             st.session_state["watermark_text"] = settings.get("watermark_text", "© CreatorOS")
@@ -89,6 +91,7 @@ def save_settings(profile_name):
     try:
         settings_data = {
             "user_id": profile_name,
+            "is_pro": st.session_state["is_pro"],
             "watermark_type": st.session_state["watermark_type"],
             "position": st.session_state["position"],
             "watermark_text": st.session_state["watermark_text"],
@@ -222,6 +225,13 @@ def format_bytes(bytes_size):
 
 st.sidebar.title("⚙️ Einstellungen")
 
+# Plan Status Badge
+is_pro = st.session_state["is_pro"]
+if is_pro:
+    st.sidebar.success("✨ PRO Plan aktiv")
+else:
+    st.sidebar.info("🆓 Free Plan")
+
 # Profil-Bereich
 st.sidebar.subheader("👤 Profil")
 
@@ -252,12 +262,24 @@ st.sidebar.divider()
 # Wasserzeichen-Einstellungen
 st.sidebar.subheader("🎨 Wasserzeichen")
 
-watermark_type = st.sidebar.radio(
-    "Typ",
-    ["Text", "Bild/Logo"],
-    key="watermark_type",
-    help="Wähle zwischen Text oder deinem eigenen Logo"
-)
+# Wasserzeichen-Typ (eingeschränkt für Free-User)
+if is_pro:
+    watermark_type = st.sidebar.radio(
+        "Typ",
+        ["Text", "Bild/Logo"],
+        key="watermark_type",
+        help="Wähle zwischen Text oder deinem eigenen Logo"
+    )
+else:
+    st.sidebar.radio(
+        "Typ",
+        ["Text", "Bild/Logo"],
+        index=0,
+        key="watermark_type",
+        disabled=True,
+        help="🔒 Logo-Wasserzeichen nur im PRO Plan verfügbar"
+    )
+    watermark_type = "Text"
 
 position_labels = {
     "Gekachelt (Tiled)": "tiled",
@@ -281,12 +303,22 @@ logo_file = None
 logo_image = None
 
 if watermark_type == "Text":
-    watermark_text = st.sidebar.text_input(
-        "Text",
-        value=st.session_state["watermark_text"],
-        key="watermark_text",
-        help="Der Text, der als Wasserzeichen verwendet wird"
-    )
+    # Free-User: Fester Text
+    if not is_pro:
+        watermark_text = st.sidebar.text_input(
+            "Text",
+            value="Created with CreatorOS",
+            key="watermark_text_disabled",
+            disabled=True,
+            help="🔒 Custom Text nur im PRO Plan verfügbar"
+        )
+    else:
+        watermark_text = st.sidebar.text_input(
+            "Text",
+            value=st.session_state["watermark_text"],
+            key="watermark_text",
+            help="Der Text, der als Wasserzeichen verwendet wird"
+        )
 else:
     logo_file = st.sidebar.file_uploader(
         "Logo hochladen",
@@ -382,15 +414,34 @@ with st.sidebar.expander("📤 Export", expanded=False):
 
 st.sidebar.divider()
 
+# Admin: Pro-Status Simulation
+with st.sidebar.expander("🔧 Admin", expanded=False):
+    simulate_pro = st.checkbox(
+        "Simuliere PRO Status",
+        value=st.session_state["is_pro"],
+        help="Entwickler-Option: Aktiviert PRO-Features ohne Payment"
+    )
+    
+    if simulate_pro != st.session_state["is_pro"]:
+        st.session_state["is_pro"] = simulate_pro
+        st.rerun()
+
+st.sidebar.divider()
+
 with st.sidebar.expander("ℹ️ Info"):
     st.write("""
-    **CreatorOS v6.0**
+    **CreatorOS v7.0 Freemium**
     
-    - 🔒 EXIF-Metadaten-Entfernung
-    - 🎨 Text & Logo-Wasserzeichen
-    - ☁️ Cloud-Speicherung (Supabase)
-    - 📦 Batch-Verarbeitung
-    - 🚀 Live-Vorschau
+    **Free Plan:**
+    - 🔒 1 Bild pro Batch
+    - 🔒 Nur Text-Wasserzeichen
+    - 🔒 Fester Branding-Text
+    
+    **PRO Plan:**
+    - ✨ Unlimited Batch
+    - ✨ Logo-Wasserzeichen
+    - ✨ Custom Text
+    - ✨ Cloud-Speicherung
     """)
 
 # =============================================================================
@@ -399,6 +450,11 @@ with st.sidebar.expander("ℹ️ Info"):
 
 st.title("🔒 CreatorOS - Privacy & Watermark Bot")
 st.write("Schütze deine Bilder mit Metadaten-Entfernung und professionellen Wasserzeichen.")
+
+# Free Plan Warnung
+if not is_pro:
+    st.warning("🔒 **Free Plan:** Nur 1 Bild wird verarbeitet. Upgrade für Batch-Support und weitere Features!")
+
 st.divider()
 
 # Layout - Zwei Spalten
@@ -419,7 +475,14 @@ with col_left:
     )
     
     if uploaded_files:
-        st.success(f"✅ {len(uploaded_files)} Bild(er) hochgeladen")
+        # Free-User: Beschränke auf 1 Bild
+        if not is_pro and len(uploaded_files) > 1:
+            st.info(f"📋 {len(uploaded_files)} Bilder hochgeladen, aber nur das erste wird verarbeitet (Free Plan).")
+            files_to_process = uploaded_files[:1]
+        else:
+            files_to_process = uploaded_files
+        
+        st.success(f"✅ {len(files_to_process)} Bild(er) wird/werden verarbeitet")
         
         can_preview = False
         if watermark_type == "Text" and watermark_text:
@@ -431,7 +494,7 @@ with col_left:
             st.divider()
             st.subheader("👁️ Live-Vorschau")
             
-            first_file = uploaded_files[0]
+            first_file = files_to_process[0]
             preview_image = Image.open(first_file)
             first_file.seek(0)
             
@@ -477,6 +540,12 @@ with col_right:
     st.subheader("🚀 Verarbeitung")
     
     if uploaded_files:
+        # Free-User: Beschränke auf 1 Bild
+        if not is_pro and len(uploaded_files) > 1:
+            files_to_process = uploaded_files[:1]
+        else:
+            files_to_process = uploaded_files
+        
         can_process = False
         if watermark_type == "Text" and watermark_text:
             can_process = True
@@ -486,8 +555,8 @@ with col_right:
         if not can_process:
             st.warning("⚠️ Bitte konfiguriere das Wasserzeichen.")
         else:
-            if len(uploaded_files) > 1:
-                st.info(f"📋 {len(uploaded_files)} Bilder bereit")
+            if len(files_to_process) > 1:
+                st.info(f"📋 {len(files_to_process)} Bilder bereit")
             
             if st.button("🚀 Alle verarbeiten", type="primary", use_container_width=True):
                 progress_bar = st.progress(0)
@@ -495,8 +564,8 @@ with col_right:
                 
                 processed_images = []
                 
-                for idx, uploaded_file in enumerate(uploaded_files):
-                    status_text.text(f"⏳ {idx + 1}/{len(uploaded_files)}: {uploaded_file.name}")
+                for idx, uploaded_file in enumerate(files_to_process):
+                    status_text.text(f"⏳ {idx + 1}/{len(files_to_process)}: {uploaded_file.name}")
                     
                     image = Image.open(uploaded_file)
                     cleaned_image = remove_metadata(image)
@@ -517,7 +586,7 @@ with col_right:
                         'original_filename': uploaded_file.name
                     })
                     
-                    progress_bar.progress((idx + 1) / len(uploaded_files))
+                    progress_bar.progress((idx + 1) / len(files_to_process))
                     uploaded_file.seek(0)
                 
                 status_text.empty()
@@ -582,4 +651,4 @@ with col_right:
         st.info("Warte auf Upload...")
 
 st.divider()
-st.caption("CreatorOS v6.0 | Cloud-Powered 🚀")
+st.caption("CreatorOS v7.0 Freemium | Cloud-Powered 🚀")
