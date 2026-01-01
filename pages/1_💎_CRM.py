@@ -6,7 +6,7 @@ Fan- und Kundenmanagement
 import streamlit as st
 import pandas as pd
 import time
-from utils import check_auth, render_sidebar, init_session_state, init_supabase
+from utils import check_auth, render_sidebar, init_session_state, init_supabase, inject_custom_css
 
 # =============================================================================
 # PAGE CONFIG
@@ -17,6 +17,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Inject Custom CSS
+inject_custom_css()
 
 # =============================================================================
 # AUTHENTICATION

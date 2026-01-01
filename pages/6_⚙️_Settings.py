@@ -5,7 +5,7 @@ Einstellungen und Admin-Bereich
 
 import streamlit as st
 import pandas as pd
-from utils import check_auth, render_sidebar, init_session_state, init_supabase, logout, ADMIN_EMAIL, PAYMENT_LINK
+from utils import check_auth, render_sidebar, init_session_state, init_supabase, logout, ADMIN_EMAIL, PAYMENT_LINK, inject_custom_css
 
 # =============================================================================
 # PAGE CONFIG
@@ -16,6 +16,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Inject Custom CSS
+inject_custom_css()
 
 # =============================================================================
 # AUTHENTICATION

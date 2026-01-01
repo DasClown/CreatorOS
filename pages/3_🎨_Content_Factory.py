@@ -7,7 +7,7 @@ import streamlit as st
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 import io
 import zipfile
-from utils import check_auth, render_sidebar, init_session_state
+from utils import check_auth, render_sidebar, init_session_state, inject_custom_css
 
 # =============================================================================
 # PAGE CONFIG
@@ -18,6 +18,9 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded"
 )
+
+# Inject Custom CSS
+inject_custom_css()
 
 # =============================================================================
 # AUTHENTICATION
