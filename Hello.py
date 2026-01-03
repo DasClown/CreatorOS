@@ -1,402 +1,371 @@
-"""
-CreatorOS - Main Dashboard
-Zentrale Übersicht über alle Module
-"""
-
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta, date
-from utils import check_auth, render_sidebar, init_session_state, init_supabase, inject_custom_css
+import requests
+from datetime import datetime, date
+from supabase import create_client, Client
 
-# =============================================================================
-# PAGE CONFIG
-# =============================================================================
-st.set_page_config(
-    page_title="CreatorOS - Dashboard",
-    page_icon="🎯",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# --- KONFIGURATION ---
+st.set_page_config(page_title="CreatorDeck", page_icon="🚀", layout="wide")
 
-# Inject Custom CSS
-inject_custom_css()
+# --- SUPABASE CLIENT ---
+@st.cache_resource
+def init_supabase() -> Client:
+    """Initialisiert den Supabase Client."""
+    try:
+        url = st.secrets["supabase"]["url"]
+        key = st.secrets["supabase"]["key"]
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"Supabase Verbindungsfehler: {e}")
+        return None
 
-# =============================================================================
-# AUTHENTICATION
-# =============================================================================
-init_session_state()
-user = check_auth()
-
-# =============================================================================
-# SIDEBAR
-# =============================================================================
-user_email, is_pro, is_admin = render_sidebar()
-
-# =============================================================================
-# SUPABASE CLIENT
-# =============================================================================
 supabase = init_supabase()
-user_id = user.id if hasattr(user, 'id') else user.email
 
-# =============================================================================
-# DATA LOADING & AGGREGATION
-# =============================================================================
-
-@st.cache_data(ttl=30)
-def load_dashboard_data(user_id):
-    """Lade alle Daten für das Dashboard"""
-    
-    # Current Month Dates
-    now = datetime.now()
-    first_day_month = date(now.year, now.month, 1)
-    
-    # Last 30 Days
-    days_ago_30 = datetime.now() - timedelta(days=30)
-    
-    data = {
-        'revenue_month': 0,
-        'profit_month': 0,
-        'new_fans_month': 0,
-        'open_tasks': 0,
-        'revenue_30_days': pd.DataFrame(),
-        'total_fans': 0,
-        'total_tasks': 0
-    }
-    
-    # =============================================================================
-    # FINANCE DATA
-    # =============================================================================
+# --- HILFSFUNKTIONEN ---
+def get_instagram_followers():
+    """Ruft die Follower-Zahl von der Instagram Graph API ab."""
     try:
-        finance_response = supabase.table("finance_entries").select("*").eq("user_id", user_id).execute()
-        
-        if finance_response.data:
-            df_finance = pd.DataFrame(finance_response.data)
-            df_finance['date'] = pd.to_datetime(df_finance['date'])
-            
-            # This Month
-            df_this_month = df_finance[df_finance['date'].dt.date >= first_day_month]
-            
-            if not df_this_month.empty:
-                einnahmen_month = df_this_month[df_this_month['type'] == 'Einnahme']['amount'].sum()
-                ausgaben_month = df_this_month[df_this_month['type'] == 'Ausgabe']['amount'].sum()
-                
-                data['revenue_month'] = einnahmen_month
-                data['profit_month'] = einnahmen_month - ausgaben_month
-            
-            # Last 30 Days (for chart)
-            df_30_days = df_finance[df_finance['date'] >= days_ago_30]
-            
-            if not df_30_days.empty:
-                # Daily revenue
-                daily_revenue = df_30_days[df_30_days['type'] == 'Einnahme'].groupby(
-                    df_30_days['date'].dt.date
-                )['amount'].sum().reset_index()
-                
-                daily_revenue.columns = ['date', 'revenue']
-                daily_revenue = daily_revenue.sort_values('date')
-                
-                data['revenue_30_days'] = daily_revenue
+        if "INSTAGRAM_ACCESS_TOKEN" in st.secrets and "INSTAGRAM_ACCOUNT_ID" in st.secrets:
+            token = st.secrets["INSTAGRAM_ACCESS_TOKEN"]
+            id = st.secrets["INSTAGRAM_ACCOUNT_ID"]
+            url = f"https://graph.facebook.com/v18.0/{id}?fields=followers_count&access_token={token}"
+            response = requests.get(url).json()
+            if 'error' in response:
+                st.error(f"API Fehler: {response['error']['message']}")
+                return 0
+            return response.get('followers_count', 0)
+        else:
+            return 0
     except Exception as e:
-        print(f"Finance load error: {e}")
-    
-    # =============================================================================
-    # FANS DATA
-    # =============================================================================
+        st.error(f"Verbindungsfehler: {e}")
+        return 0
+
+def get_recent_media():
+    """Ruft die letzten 3 Instagram-Posts von der Graph API ab."""
     try:
-        fans_response = supabase.table("fans").select("*").eq("user_id", user_id).execute()
-        
-        if fans_response.data:
-            df_fans = pd.DataFrame(fans_response.data)
-            data['total_fans'] = len(df_fans)
+        if "INSTAGRAM_ACCESS_TOKEN" in st.secrets and "INSTAGRAM_ACCOUNT_ID" in st.secrets:
+            token = st.secrets["INSTAGRAM_ACCESS_TOKEN"]
+            account_id = st.secrets["INSTAGRAM_ACCOUNT_ID"]
+            url = f"https://graph.facebook.com/v18.0/{account_id}/media"
+            params = {
+                "fields": "id,caption,media_type,media_url,thumbnail_url,permalink,like_count,comments_count,timestamp",
+                "limit": 3,
+                "access_token": token
+            }
+            response = requests.get(url, params=params).json()
             
-            # Fans created this month
-            df_fans['created_at'] = pd.to_datetime(df_fans['created_at'])
-            df_new_fans = df_fans[df_fans['created_at'].dt.date >= first_day_month]
-            data['new_fans_month'] = len(df_new_fans)
+            if 'error' in response:
+                st.error(f"API Fehler: {response['error']['message']}")
+                return []
+            
+            return response.get('data', [])
+        else:
+            return []
     except Exception as e:
-        print(f"Fans load error: {e}")
+        st.error(f"Verbindungsfehler: {e}")
+        return []
+
+def load_content_from_supabase() -> pd.DataFrame:
+    """Lädt Content-Daten aus Supabase."""
+    if not supabase:
+        return pd.DataFrame()
     
-    # =============================================================================
-    # TASKS DATA
-    # =============================================================================
     try:
-        tasks_response = supabase.table("tasks").select("*").eq("user_id", user_id).execute()
+        response = supabase.table('content_plan').select("*").order('datum', desc=True).execute()
         
-        if tasks_response.data:
-            df_tasks = pd.DataFrame(tasks_response.data)
-            data['total_tasks'] = len(df_tasks)
-            
-            # Open tasks
-            df_open = df_tasks[df_tasks['status'] != 'Done']
-            data['open_tasks'] = len(df_open)
+        if response.data:
+            df = pd.DataFrame(response.data)
+            # Konvertiere Datum-Strings zu date-Objekten
+            if 'datum' in df.columns:
+                df['datum'] = pd.to_datetime(df['datum']).dt.date
+            # Rename columns to match UI (capitalize)
+            df = df.rename(columns={
+                'id': 'ID',
+                'datum': 'Datum',
+                'titel': 'Titel',
+                'format': 'Format',
+                'status': 'Status',
+                'notizen': 'Notizen'
+            })
+            return df
+        else:
+            return pd.DataFrame(columns=['ID', 'Datum', 'Titel', 'Format', 'Status', 'Notizen'])
     except Exception as e:
-        print(f"Tasks load error: {e}")
+        st.error(f"Fehler beim Laden der Daten: {e}")
+        return pd.DataFrame(columns=['ID', 'Datum', 'Titel', 'Format', 'Status', 'Notizen'])
+
+def init_session_state():
+    """Initialisiert die Datenbank im Session State - lädt aus Supabase."""
+    if 'content_df' not in st.session_state:
+        st.session_state['content_df'] = load_content_from_supabase()
+
+def check_password():
+    """Prüft das Passwort und gibt nur bei korrekter Eingabe Zugriff."""
+    # Prüfe, ob bereits verifiziert
+    if st.session_state.get('password_correct', False):
+        return True
     
-    return data
-
-# Load Data
-dashboard_data = load_dashboard_data(user_id)
-
-# =============================================================================
-# MAIN DASHBOARD
-# =============================================================================
-
-st.title("🎯 CreatorDeck Dashboard")
-st.markdown(f"Willkommen zurück, **{user_email}** 👋")
-
-st.divider()
-
-# =============================================================================
-# TOP-LEVEL KPIs
-# =============================================================================
-
-st.subheader("📊 Übersicht diesen Monat")
-
-col1, col2, col3, col4 = st.columns(4, gap="medium")
-
-with col1:
-    revenue = dashboard_data['revenue_month']
-    st.metric(
-        label="💰 Umsatz",
-        value=f"€{revenue:,.2f}",
-        help="Gesamte Einnahmen diesen Monat"
-    )
-
-with col2:
-    profit = dashboard_data['profit_month']
-    delta_color = "normal" if profit >= 0 else "inverse"
-    st.metric(
-        label="📈 Gewinn",
-        value=f"€{profit:,.2f}",
-        delta=f"{'Positiv' if profit >= 0 else 'Negativ'}",
-        delta_color=delta_color,
-        help="Einnahmen - Ausgaben diesen Monat"
-    )
-
-with col3:
-    new_fans = dashboard_data['new_fans_month']
-    st.metric(
-        label="👥 Neue Fans",
-        value=new_fans,
-        help="Fans, die diesen Monat hinzugefügt wurden"
-    )
-
-with col4:
-    open_tasks = dashboard_data['open_tasks']
-    st.metric(
-        label="📅 Offene Tasks",
-        value=open_tasks,
-        delta=f"{open_tasks} zu erledigen" if open_tasks > 0 else "Alles erledigt",
-        help="Tasks die noch erledigt werden müssen"
-    )
-
-st.divider()
-
-# =============================================================================
-# SCHNELL-AKTIONEN
-# =============================================================================
-
-st.subheader("⚡ Schnell-Aktionen")
-st.markdown("Starte sofort mit den wichtigsten Aufgaben")
-
-col_action1, col_action2, col_action3, col_action4 = st.columns(4, gap="medium")
-
-with col_action1:
-    if st.button("📸 Upload starten", use_container_width=True, type="primary", key="action_upload"):
-        st.switch_page("pages/3_🎨_Content_Factory.py")
-
-with col_action2:
-    if st.button("💰 Einnahme buchen", use_container_width=True, type="primary", key="action_finance"):
-        st.switch_page("pages/2_💸_Finance.py")
-
-with col_action3:
-    if st.button("👥 Fan hinzufügen", use_container_width=True, type="primary", key="action_crm"):
-        st.switch_page("pages/1_💎_CRM.py")
-
-with col_action4:
-    if st.button("📅 Task erstellen", use_container_width=True, type="primary", key="action_planner"):
-        st.switch_page("pages/5_📅_Planner.py")
-
-st.divider()
-
-# =============================================================================
-# CHARTS & INSIGHTS
-# =============================================================================
-
-col_chart1, col_chart2 = st.columns([2, 1], gap="large")
-
-with col_chart1:
-    st.subheader("📈 Umsatzverlauf (30 Tage)")
+    # Zeige Login-Screen
+    st.title("🔒 CreatorDeck Login")
+    st.markdown("Bitte gib den Zugangscode ein, um fortzufahren.")
     
-    df_revenue = dashboard_data['revenue_30_days']
+    password = st.text_input("Zugangscode", type="password", key="password_input")
     
-    if not df_revenue.empty:
-        # Setze date als Index für bessere Chart-Darstellung
-        df_revenue_chart = df_revenue.set_index('date')
+    if st.button("Anmelden", type="primary"):
+        # Prüfe Passwort
+        if "APP_PASSWORD" in st.secrets and password == st.secrets["APP_PASSWORD"]:
+            st.session_state['password_correct'] = True
+            st.success("✅ Zugriff gewährt!")
+            st.rerun()
+        else:
+            st.error("❌ Zugriff verweigert - Falscher Zugangscode")
+            st.stop()
+    else:
+        st.stop()
+    
+    return False
+
+# --- HAUPTPROGRAMM ---
+def main():
+    # Passwort-Schutz als erstes prüfen
+    check_password()
+    
+    st.title("🚀 CreatorDeck")
+    
+    init_session_state()
+    
+    # 1. TABS ERSTELLEN
+    tab_cockpit, tab_planner, tab_settings = st.tabs(["📊 Cockpit", "🗓️ Content Planer", "⚙️ Einstellungen"])
+
+    # --- TAB 1: COCKPIT ---
+    with tab_cockpit:
+        st.header("Performance Übersicht")
         
-        st.line_chart(df_revenue_chart['revenue'], use_container_width=True, height=300)
+        col1, col2, col3 = st.columns(3)
+        
+        # Instagram Stats (Live Data)
+        followers = get_instagram_followers()
+        
+        with col1:
+            st.metric(label="Instagram Follower", value=f"{followers:,}")
+        
+        with col2:
+            # Beispiel für statische/berechnete Metrik aus dem Planer
+            df = st.session_state['content_df']
+            planned_count = len(df[df['Status'] == 'Ready']) if not df.empty else 0
+            st.metric(label="Beiträge Ready", value=planned_count)
+        
+        with col3:
+            # Gesamt Content-Ideen
+            total_ideas = len(st.session_state['content_df'])
+            st.metric(label="Content-Ideen", value=total_ideas)
         
         st.divider()
         
-        # Stats
-        avg_daily = df_revenue['revenue'].mean()
-        max_day = df_revenue.loc[df_revenue['revenue'].idxmax()]
+        # Visual Analytics
+        st.subheader("📊 Content Pipeline Analytics")
         
-        col_stat1, col_stat2 = st.columns(2)
-        with col_stat1:
-            st.metric(
-                label="💵 Ø Tagesumsatz",
-                value=f"€{avg_daily:.2f}"
+        df = st.session_state['content_df']
+        
+        if not df.empty:
+            c1, c2 = st.columns(2)
+            
+            with c1:
+                st.markdown("**Status-Verteilung**")
+                # Gruppiere nach Status und zähle
+                status_counts = df['Status'].value_counts()
+                st.bar_chart(status_counts)
+            
+            with c2:
+                st.markdown("**Format-Verteilung**")
+                # Gruppiere nach Format und zähle
+                format_counts = df['Format'].value_counts()
+                st.bar_chart(format_counts)
+        else:
+            st.info("📭 Noch keine Daten für Grafiken vorhanden.")
+        
+        st.divider()
+        
+        # Live Media Feed
+        st.subheader("📸 Neueste Posts")
+        
+        recent_posts = get_recent_media()
+        
+        if recent_posts and len(recent_posts) > 0:
+            cols = st.columns(3)
+            
+            for idx, post in enumerate(recent_posts):
+                with cols[idx]:
+                    # Bestimme die richtige Bild-URL
+                    if post.get('media_type') == 'VIDEO':
+                        image_url = post.get('thumbnail_url', '')
+                    else:
+                        image_url = post.get('media_url', '')
+                    
+                    # Zeige das Bild
+                    if image_url:
+                        st.image(image_url, use_container_width=True)
+                    
+                    # Metriken
+                    likes = post.get('like_count', 0)
+                    comments = post.get('comments_count', 0)
+                    st.markdown(f"❤️ **{likes:,}** | 💬 **{comments:,}**")
+                    
+                    # Caption (gekürzt)
+                    caption = post.get('caption', 'Kein Text')
+                    if len(caption) > 50:
+                        caption = caption[:50] + '...'
+                    st.caption(caption)
+                    
+                    # Link zum Post
+                    permalink = post.get('permalink', '')
+                    if permalink:
+                        st.link_button("Auf Insta ansehen", permalink, use_container_width=True)
+        else:
+            st.info("📭 Keine Posts gefunden oder API-Limit erreicht.")
+
+    # --- TAB 2: CONTENT PLANER ---
+    with tab_planner:
+        st.header("Content Planung")
+        
+        # UI Komponente C: Quick Stats
+        df = st.session_state['content_df']
+        
+        m_col1, m_col2, m_col3 = st.columns(3)
+        m_col1.metric("Offene Ideen", len(df[df['Status'] == 'Idee']) if not df.empty else 0)
+        m_col2.metric("In Arbeit (Drafts)", len(df[df['Status'] == 'Draft']) if not df.empty else 0)
+        m_col3.metric("Gesamt", len(df))
+        
+        st.divider()
+
+        # UI Komponente A: Eingabe (Neue Idee)
+        with st.expander("➕ Neue Idee erfassen", expanded=False):
+            with st.form("new_post_form"):
+                c1, c2 = st.columns(2)
+                with c1:
+                    new_title = st.text_input("Titel / Thema")
+                    new_date = st.date_input("Geplantes Datum", date.today())
+                with c2:
+                    new_format = st.selectbox("Format", ["Reel", "Post", "Carousel", "Story"])
+                    new_status = st.selectbox("Status", ["Idee", "Draft", "Ready", "Published"])
+                
+                new_notes = st.text_area("Notizen / Skript")
+                
+                submitted = st.form_submit_button("Speichern")
+                
+                if submitted and supabase:
+                    if not new_title:
+                        st.error("⚠️ Bitte gib einen Titel ein!")
+                    else:
+                        # Erstelle neuen Eintrag für Supabase
+                        new_data = {
+                            'datum': new_date.isoformat(),
+                            'titel': new_title,
+                            'format': new_format,
+                            'status': new_status,
+                            'notizen': new_notes
+                        }
+                        
+                        try:
+                            # Insert in Supabase
+                            response = supabase.table('content_plan').insert(new_data).execute()
+                            st.success(f"✅ Idee '{new_title}' wurde gespeichert!")
+                            # Reload data
+                            st.session_state['content_df'] = load_content_from_supabase()
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fehler beim Speichern: {e}")
+
+        # UI Komponente B: Übersicht (Data Editor)
+        st.subheader("Aktuelle Planung")
+        
+        if not df.empty:
+            edited_df = st.data_editor(
+                df,
+                use_container_width=True,
+                num_rows="dynamic",
+                column_config={
+                    "ID": st.column_config.NumberColumn(
+                        "ID",
+                        disabled=True,
+                        width="small"
+                    ),
+                    "Format": st.column_config.SelectboxColumn(
+                        "Format",
+                        help="Das Format des Beitrags",
+                        width="medium",
+                        options=["Reel", "Post", "Carousel", "Story"],
+                        required=True,
+                    ),
+                    "Status": st.column_config.SelectboxColumn(
+                        "Status",
+                        width="medium",
+                        options=["Idee", "Draft", "Ready", "Published"],
+                        required=True,
+                    ),
+                    "Datum": st.column_config.DateColumn(
+                        "Datum",
+                        format="DD.MM.YYYY",
+                    ),
+                },
+                hide_index=True,
+                key="content_editor"
             )
-        with col_stat2:
-            st.metric(
-                label="🏆 Bester Tag", 
-                value=f"€{max_day['revenue']:.2f}",
-                delta=max_day['date'].strftime('%d.%m.%Y')
-            )
-    else:
-        st.info("📭 Noch keine Einnahmen in den letzten 30 Tagen. Buche deine erste Einnahme!")
-        if st.button("→ Zur Finance-Seite", type="primary"):
-            st.switch_page("pages/2_💸_Finance.py")
+            
+            # Sync Button
+            if st.button("💾 Änderungen synchronisieren", type="primary", use_container_width=True):
+                if supabase:
+                    try:
+                        # Iteriere durch edited_df und update in Supabase
+                        for _, row in edited_df.iterrows():
+                            update_data = {
+                                'datum': row['Datum'].isoformat() if isinstance(row['Datum'], date) else row['Datum'],
+                                'titel': row['Titel'],
+                                'format': row['Format'],
+                                'status': row['Status'],
+                                'notizen': row['Notizen']
+                            }
+                            
+                            # Upsert basierend auf ID
+                            supabase.table('content_plan').update(update_data).eq('id', row['ID']).execute()
+                        
+                        st.success("✅ Alle Änderungen wurden synchronisiert!")
+                        st.session_state['content_df'] = load_content_from_supabase()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Fehler beim Synchronisieren: {e}")
+        else:
+            st.info("📭 Noch keine Content-Ideen vorhanden. Erstelle deine erste Idee oben!")
 
-with col_chart2:
-    st.subheader("🎯 Quick Stats")
-    
-    st.markdown("---")
-    
-    # Fans
-    total_fans = dashboard_data['total_fans']
-    st.markdown(f"### 👥 Fans")
-    st.markdown(f"**{total_fans}** gesamt")
-    
-    if total_fans > 0:
-        fan_growth = (dashboard_data['new_fans_month'] / total_fans * 100) if total_fans > 0 else 0
-        st.progress(min(fan_growth / 100, 1.0))
-        st.caption(f"💚 {fan_growth:.1f}% Wachstum diesen Monat")
-    else:
-        st.progress(0.0)
-        st.caption("⚪ Noch keine Fans")
-    
-    st.markdown("---")
-    
-    # Tasks
-    total_tasks = dashboard_data['total_tasks']
-    st.markdown(f"### 📋 Tasks")
-    st.markdown(f"**{total_tasks}** gesamt")
-    
-    if total_tasks > 0:
-        completion_rate = ((total_tasks - open_tasks) / total_tasks * 100) if total_tasks > 0 else 0
-        st.progress(completion_rate / 100)
-        st.caption(f"💜 {completion_rate:.0f}% abgeschlossen")
-    else:
-        st.progress(0.0)
-        st.caption("⚪ Noch keine Tasks")
-    
-    st.markdown("---")
-    
-    # Status Badge
-    st.markdown(f"### 💎 Account")
-    if is_pro or is_admin:
-        st.success("**✨ PRO Member**\n\nAlle Features freigeschaltet")
-    else:
-        st.info("**🆓 FREE Account**\n\nUpgrade für mehr Features")
-        st.link_button(
-            "🚀 Jetzt upgraden",
-            "https://buy.stripe.com/28E8wO0W59Y46rM8rG6J200",
-            use_container_width=True
-        )
+    # --- TAB 3: EINSTELLUNGEN ---
+    with tab_settings:
+        st.header("Einstellungen")
+        st.info("🚧 Dieser Bereich ist in Entwicklung.")
+        
+        with st.expander("API Konfiguration"):
+            st.markdown("""
+            **Instagram Graph API**
+            
+            Füge deine Credentials in `.streamlit/secrets.toml` hinzu:
+            ```toml
+            INSTAGRAM_ACCESS_TOKEN = "dein_token"
+            INSTAGRAM_ACCOUNT_ID = "deine_id"
+            ```
+            
+            **Supabase Database**
+            
+            ```toml
+            [supabase]
+            url = "https://dein-projekt.supabase.co"
+            key = "dein_anon_key"
+            ```
+            """)
+        
+        with st.expander("🔄 Daten neu laden"):
+            if st.button("Daten aus Supabase neu laden"):
+                st.session_state['content_df'] = load_content_from_supabase()
+                st.success("✅ Daten wurden neu geladen!")
+                st.rerun()
 
-st.divider()
-
-# =============================================================================
-# MODULE NAVIGATION
-# =============================================================================
-
-st.subheader("🗂️ Module")
-st.markdown("Schneller Zugriff auf alle Bereiche")
-
-col_nav1, col_nav2, col_nav3 = st.columns(3, gap="large")
-
-with col_nav1:
-    st.markdown("### 💎 CRM")
-    st.markdown(f"**{dashboard_data['total_fans']}** Fans insgesamt")
-    st.markdown(f"**{dashboard_data['new_fans_month']}** neue diesen Monat")
-    st.markdown("")
-    if st.button("→ Zum CRM", use_container_width=True, key="nav_crm"):
-        st.switch_page("pages/1_💎_CRM.py")
-
-with col_nav2:
-    st.markdown("### 💸 Finance")
-    st.markdown(f"**€{dashboard_data['revenue_month']:,.2f}** Umsatz")
-    st.markdown(f"**€{dashboard_data['profit_month']:,.2f}** Gewinn")
-    st.markdown("")
-    if st.button("→ Zu Finance", use_container_width=True, key="nav_finance"):
-        st.switch_page("pages/2_💸_Finance.py")
-
-with col_nav3:
-    st.markdown("### 📅 Planner")
-    st.markdown(f"**{dashboard_data['open_tasks']}** offene Tasks")
-    st.markdown(f"**{dashboard_data['total_tasks']}** Tasks gesamt")
-    st.markdown("")
-    if st.button("→ Zum Planner", use_container_width=True, key="nav_planner"):
-        st.switch_page("pages/5_📅_Planner.py")
-
-st.divider()
-
-# =============================================================================
-# MOTIVATIONAL MESSAGE
-# =============================================================================
-
-st.subheader("💡 Heute")
-
-# Generate motivational message based on data
-messages = []
-
-if dashboard_data['open_tasks'] > 0:
-    messages.append(f"📋 Du hast **{dashboard_data['open_tasks']}** offene Tasks. Los geht's!")
-else:
-    messages.append("🎉 Keine offenen Tasks! Zeit für neue Projekte.")
-
-if dashboard_data['profit_month'] > 0:
-    messages.append(f"💰 Toller Monat! **€{dashboard_data['profit_month']:,.2f}** Gewinn.")
-elif dashboard_data['revenue_month'] > 0:
-    messages.append("📊 Einnahmen fließen! Halte die Ausgaben im Griff.")
-else:
-    messages.append("🚀 Buche deine erste Einnahme und starte durch!")
-
-if dashboard_data['new_fans_month'] > 0:
-    messages.append(f"👥 **{dashboard_data['new_fans_month']}** neue Fans diesen Monat!")
-
-# Display messages in columns
-if len(messages) > 0:
-    cols = st.columns(min(len(messages), 3))
-    for idx, msg in enumerate(messages):
-        with cols[idx % 3]:
-            st.info(msg, icon="💡")
-
-st.divider()
-
-# =============================================================================
-# REFRESH & FOOTER
-# =============================================================================
-
-col_refresh, col_spacer = st.columns([1, 3])
-
-with col_refresh:
-    if st.button("🔄 Dashboard aktualisieren", use_container_width=True, type="secondary"):
-        load_dashboard_data.clear()
-        st.rerun()
-
-st.divider()
-
-# Footer
-col_footer1, col_footer2, col_footer3 = st.columns([1, 1, 1])
-
-with col_footer1:
-    st.caption("🎯 CreatorOS v10.0")
-
-with col_footer2:
-    st.caption(f"🕐 {datetime.now().strftime('%d.%m.%Y • %H:%M')}")
-
-with col_footer3:
-    st.caption("Made with ❤️ for Creators")
+if __name__ == "__main__":
+    main()

@@ -1,10 +1,11 @@
 [theme]
-primaryColor = "#7C3AED"
-backgroundColor = "#0F172A"
-secondaryBackgroundColor = "#1E293B"
-textColor = "#F8FAFC"
-font = "sans serif"
+base = "light"
+primaryColor = "#000000"        # Hartes Schwarz als Akzent (Buttons/Input)
+backgroundColor = "#FFFFFF"     # Reines Weiß
+secondaryBackgroundColor = "#F2F4F7" # Sehr helles Grau für Sidebar/Hintergründe
+textColor = "#0E1117"           # Fast Schwarz für Text (hoher Kontrast)
+font = "sans serif"             # System-Schriftart (Clean)
 
 [server]
+runOnSave = true
 enableCORS = false
-

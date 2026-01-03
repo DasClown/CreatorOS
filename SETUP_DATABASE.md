@@ -2,7 +2,7 @@
 
 ## Übersicht
 
-CreatorOS nutzt **4 Haupttabellen** in Supabase. Diese müssen einmalig über den SQL Editor angelegt werden.
+CreatorOS nutzt **7 Haupttabellen** in Supabase. Diese müssen einmalig über den SQL Editor angelegt werden.
 
 ---
 
@@ -89,6 +89,64 @@ ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
 - Automatisches Completion-Tracking
 - Überfälligkeits-Views
 
+#### ✅ Schritt 5: Assets (Portfolio/Demo)
+**Datei:** `supabase_assets_table.sql`
+
+```bash
+# Im SQL Editor:
+# 1. Öffne die Datei supabase_assets_table.sql
+# 2. Kopiere den gesamten Inhalt
+# 3. Füge in SQL Editor ein
+# 4. Klicke "Run"
+```
+
+**Features:**
+- Portfolio-Management (Stocks, Crypto, ETFs)
+- Asset-Tracking mit Mengen & Werten
+- Performance-Berechnung
+- Sortierung nach Wert
+- Trade Republic Style Demo-Page
+
+#### ✅ Schritt 6: Channels (Social Media)
+**Datei:** `supabase_channels_table.sql`
+
+```bash
+# Im SQL Editor:
+# 1. Öffne die Datei supabase_channels_table.sql
+# 2. Kopiere den gesamten Inhalt
+# 3. Füge in SQL Editor ein
+# 4. Klicke "Run"
+```
+
+**Features:**
+- Social Media Channel Management (Instagram, YouTube, TikTok, etc.)
+- Reichweiten-Tracking (Follower, Subscribers)
+- Engagement-Rate Monitoring
+- 30-Tage Wachstums-Tracking
+- Primary Channel Markierung
+- Icon-Support für visuelle Darstellung
+
+#### ✅ Schritt 7: Deals (Kooperationen & Brand Deals)
+**Datei:** `supabase_deals_table.sql`
+
+```bash
+# Im SQL Editor:
+# 1. Öffne die Datei supabase_deals_table.sql
+# 2. Kopiere den gesamten Inhalt
+# 3. Füge in SQL Editor ein
+# 4. Klicke "Run"
+```
+
+**Features:**
+- Deal & Collaboration Management
+- Brand Partnership Tracking
+- Pipeline Value Monitoring
+- Deadline/Due Date Tracking
+- Status-Workflow (Negotiation → Completed)
+- Revenue-Tracking pro Deal
+- Overdue-Alerts
+- Contact Management
+
 ---
 
 ## 🔍 Verifizierung
@@ -101,6 +159,9 @@ ALTER TABLE public.user_settings ENABLE ROW LEVEL SECURITY;
    - ✅ `fans`
    - ✅ `finance_entries`
    - ✅ `tasks`
+   - ✅ `assets`
+   - ✅ `channels`
+   - ✅ `deals`
 
 ### Test-Query:
 
@@ -111,10 +172,10 @@ SELECT
     table_type
 FROM information_schema.tables 
 WHERE table_schema = 'public'
-AND table_name IN ('user_settings', 'fans', 'finance_entries', 'tasks');
+AND table_name IN ('user_settings', 'fans', 'finance_entries', 'tasks', 'assets', 'channels', 'deals');
 ```
 
-**Erwartetes Ergebnis:** 4 Zeilen
+**Erwartetes Ergebnis:** 7 Zeilen
 
 ---
 
@@ -204,6 +265,62 @@ id (UUID, PK)
 └── completed_at (TIMESTAMP)
 ```
 
+### `assets`
+```
+id (UUID, PK)
+├── user_id (TEXT, FK)
+├── name (TEXT)
+├── ticker (TEXT)
+├── asset_type (TEXT: Stock|Crypto|ETF|Other)
+├── quantity (NUMERIC)
+├── purchase_price (NUMERIC)
+├── current_value (NUMERIC)
+├── change_24h (NUMERIC)           -- Performance letzte 24h in % (z.B. +2.4 oder -1.5)
+├── last_updated (TIMESTAMP)
+└── created_at (TIMESTAMP)
+```
+
+### `channels`
+```
+id (UUID, PK)
+├── user_id (TEXT, FK)
+├── platform (TEXT)                -- Instagram, YouTube, TikTok, etc.
+├── handle (TEXT)                  -- @username
+├── metric_main (TEXT)             -- Formatierte Anzeige (z.B. "125.5k Follower")
+├── value_main (BIGINT)            -- Follower/Subscribers (Zahlenwert)
+├── value_label (TEXT)             -- "Follower", "Subscribers", etc.
+├── engagement_rate (NUMERIC)      -- Engagement-Rate in % (z.B. 3.8)
+├── avg_views (BIGINT)             -- Durchschnittliche Views
+├── change_24h (NUMERIC)           -- Performance 24h in % (z.B. +2.4)
+├── growth_30d (NUMERIC)           -- Wachstum 30 Tage in % (z.B. +12.4)
+├── revenue_mtd (NUMERIC)          -- Einnahmen Month-to-Date in € (z.B. 1250.50)
+├── platform_icon (TEXT)           -- Emoji (z.B. "📸", "📺")
+├── is_primary (BOOLEAN)           -- Hauptkanal?
+├── notes (TEXT)
+├── created_at (TIMESTAMP)
+└── updated_at (TIMESTAMP)
+```
+
+### `deals`
+```
+id (UUID, PK)
+├── user_id (TEXT, FK)
+├── brand_name (TEXT)              -- Marke/Unternehmen (z.B. "Nike")
+├── deal_type (TEXT)               -- Typ: "Sponsored Post", "Brand Ambassador", etc.
+├── platform (TEXT)                -- Plattform für den Deal
+├── status (TEXT)                  -- Status: Negotiation, Confirmed, In Progress, Completed, Cancelled
+├── amount (NUMERIC)               -- Deal-Wert in € (z.B. 2500.00)
+├── currency (TEXT)                -- Währung (EUR, USD, etc.)
+├── due_date (DATE)                -- Fälligkeitsdatum / Deadline
+├── deliverables (TEXT)            -- Was ist zu liefern?
+├── notes (TEXT)                   -- Notizen zum Deal
+├── contact_person (TEXT)          -- Ansprechpartner
+├── contact_email (TEXT)           -- Email des Ansprechpartners
+├── created_at (TIMESTAMP)
+├── updated_at (TIMESTAMP)
+└── completed_at (TIMESTAMP)       -- Automatisch gesetzt bei Status = "Completed"
+```
+
 ---
 
 ## 🧪 Test-Daten (Optional)
@@ -234,6 +351,22 @@ Wenn eine neue Version von CreatorOS neue Spalten/Tabellen benötigt:
 1. Prüfe `CHANGELOG.md` für Schema-Änderungen
 2. Führe die entsprechenden ALTER-Statements aus
 3. **Niemals** bestehende Tabellen droppen (Datenverlust!)
+
+### Migration: Assets Tabelle (change_24h Feld)
+
+Falls du die `assets` Tabelle bereits **ohne** das `change_24h` Feld erstellt hast:
+
+**Option 1: Migration Script ausführen**
+```bash
+# Im Supabase SQL Editor:
+# Führe aus: supabase_assets_table_migration.sql
+```
+
+**Option 2: Manuell hinzufügen**
+```sql
+ALTER TABLE public.assets 
+ADD COLUMN IF NOT EXISTS change_24h DECIMAL(10, 2) DEFAULT 0;
+```
 
 **Beispiel Migration:**
 ```sql
@@ -276,7 +409,7 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 Nach dem Setup solltest du:
 
-- [ ] Alle 4 Tabellen in Table Editor sehen
+- [ ] Alle 7 Tabellen in Table Editor sehen
 - [ ] RLS aktiviert für alle Tabellen
 - [ ] Policies existieren für alle Tabellen
 - [ ] Indizes erstellt (prüfe in Database > Indexes)

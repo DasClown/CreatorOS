@@ -29,3 +29,6 @@ Thumbs.db
 .streamlit/secrets.toml
 .streamlit/*_cache/
 
+# Data Files (Local Database)
+*.csv
+content_db.csv

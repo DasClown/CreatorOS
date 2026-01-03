@@ -1,0 +1,22 @@
+# =============================================================================
+# YouTube Channel IDs (Optional)
+# =============================================================================
+# Alternative zu Notizen in der Datenbank: Channel IDs hier zentral verwalten
+# 
+# Format:
+# [youtube]
+# "@YourHandle" = "UCxxxxxxxxxxxxxxxxxxxxxx"
+
+[youtube]
+# Beispiele (ersetze mit deinen Channels):
+# "@JanickTech" = "UCxxxxxxxxxxxxxxxxx"
+# "@CreatorChannel" = "UCyyyyyyyyyyyyyyyyy"
+
+# =============================================================================
+# So findest du deine YouTube Channel ID:
+# =============================================================================
+# 1. Gehe zu youtube.com/@yourhandle
+# 2. Klicke auf den Kanal
+# 3. URL ändert sich zu: youtube.com/channel/UCxxxxxx
+# 4. Kopiere die ID (24 Zeichen, beginnt mit "UC")
+

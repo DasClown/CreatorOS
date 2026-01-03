@@ -6,6 +6,12 @@ Enthält: Supabase Client, Auth-Funktionen, DB-Operations, Custom CSS
 import streamlit as st
 from supabase import create_client, Client
 
+try:
+    from googleapiclient.discovery import build
+    YOUTUBE_API_AVAILABLE = True
+except ImportError:
+    YOUTUBE_API_AVAILABLE = False
+
 # =============================================================================
 # CONSTANTS
 # =============================================================================
@@ -50,336 +56,135 @@ janick@icanhasbucket.de
 # =============================================================================
 
 def inject_custom_css():
-    """Injiziert Custom CSS für ein modernes, poliertes Design"""
+    """Injiziert minimalistisches CSS im Trade Republic / Banking App Style mit Mobile-First Design"""
     st.markdown("""
     <style>
-    /* ===== Google Font Import ===== */
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+    /* ===== Inter Font ===== */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
     
-    /* ===== Global Font ===== */
-    html, body, [class*="css"], .stApp {
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+        color: #0E1117;
     }
+
+    /* ===== Layout: Schlank & Mittig (Mobile App Feel) ===== */
+    header {visibility: hidden;}
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
     
-    /* ===== Layout Optimierung ===== */
     .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 1400px;
+        padding-top: 3rem !important;
+        padding-bottom: 5rem !important;
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 480px !important; /* Erzwingt schmale Breite */
+        margin: 0 auto !important;   /* Zentriert */
     }
-    
-    /* ===== Buttons mit Gradient ===== */
+
+    /* ===== Card Styling (Moderner, runder) ===== */
+    .st-card {
+        background-color: white;
+        border-radius: 16px; /* Runder, moderner */
+        padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.08); /* Weicherer Schatten */
+        margin-bottom: 16px;
+        border: 1px solid #F3F4F6;
+        transition: transform 0.1s, border-color 0.2s;
+    }
+    .st-card:hover {
+        border-color: #E5E7EB;
+        transform: translateY(-1px);
+    }
+
+    /* ===== Metriken ===== */
+    div[data-testid="stMetricValue"] {
+        font-size: 26px;
+        font-weight: 700;
+        color: #111827;
+    }
+    div[data-testid="stMetricLabel"] {
+        font-size: 13px;
+        font-weight: 600;
+        color: #6B7280;
+    }
+
+    /* ===== Buttons (Schwarz/Flach/Abgerundet) ===== */
     .stButton > button {
-        background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%);
+        background-color: #000000;
+        color: white;
+        border-radius: 12px;
+        border: none;
+        font-weight: 600;
+        font-size: 14px;
+        width: 100%;
+        height: 48px;
+        margin-top: 8px;
+    }
+    .stButton > button:hover {
+        background-color: #222222;
         color: white;
         border: none;
-        border-radius: 12px;
-        padding: 0.6rem 1.5rem;
-        font-weight: 600;
-        font-size: 0.95rem;
-        letter-spacing: 0.3px;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25);
-    }
-    
-    .stButton > button:hover {
-        transform: translateY(-2px) scale(1.02);
-        box-shadow: 0 8px 20px rgba(124, 58, 237, 0.4);
-        background: linear-gradient(135deg, #6D28D9 0%, #8B5CF6 100%);
-    }
-    
-    .stButton > button:active {
-        transform: translateY(0px) scale(0.98);
-    }
-    
-    /* Primary Button spezielle Styles */
-    .stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%);
-        font-weight: 700;
-    }
-    
-    /* Secondary Button */
-    .stButton > button[kind="secondary"] {
-        background: linear-gradient(135deg, #1E293B 0%, #334155 100%);
-        box-shadow: 0 4px 12px rgba(30, 41, 59, 0.25);
-    }
-    
-    .stButton > button[kind="secondary"]:hover {
-        background: linear-gradient(135deg, #334155 0%, #475569 100%);
-    }
-    
-    /* ===== Metriken als Cards ===== */
-    [data-testid="stMetric"] {
-        background: linear-gradient(135deg, #1E293B 0%, #1a2332 100%);
-        padding: 1.5rem 1.25rem;
-        border-radius: 16px;
-        border: 1px solid rgba(124, 58, 237, 0.1);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-        transition: all 0.3s ease;
-    }
-    
-    [data-testid="stMetric"]:hover {
-        transform: translateY(-4px);
-        border-color: rgba(124, 58, 237, 0.3);
-        box-shadow: 0 8px 24px rgba(124, 58, 237, 0.2);
-    }
-    
-    [data-testid="stMetric"] label {
-        font-size: 0.85rem !important;
-        font-weight: 600 !important;
-        color: #94A3B8 !important;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-    }
-    
-    [data-testid="stMetric"] [data-testid="stMetricValue"] {
-        font-size: 2rem !important;
-        font-weight: 700 !important;
-        color: #F8FAFC !important;
-    }
-    
-    [data-testid="stMetric"] [data-testid="stMetricDelta"] {
-        font-size: 0.9rem !important;
-        font-weight: 600 !important;
-    }
-    
-    /* ===== DataFrames & Tables ===== */
-    [data-testid="stDataFrame"] {
-        border-radius: 12px;
-        overflow: hidden;
-        border: 1px solid rgba(124, 58, 237, 0.15);
-    }
-    
-    /* DataFrame Header */
-    [data-testid="stDataFrame"] thead tr th {
-        background: linear-gradient(135deg, #1E293B 0%, #334155 100%) !important;
-        color: #F8FAFC !important;
-        font-weight: 700 !important;
-        text-transform: uppercase;
-        font-size: 0.8rem !important;
-        letter-spacing: 0.5px;
-        padding: 1rem !important;
-        border-bottom: 2px solid #7C3AED !important;
-    }
-    
-    /* DataFrame Rows */
-    [data-testid="stDataFrame"] tbody tr {
-        transition: background-color 0.2s ease;
-    }
-    
-    [data-testid="stDataFrame"] tbody tr:hover {
-        background-color: rgba(124, 58, 237, 0.08) !important;
-    }
-    
-    /* DataFrame Cells */
-    [data-testid="stDataFrame"] td {
-        padding: 0.75rem 1rem !important;
-        border-bottom: 1px solid rgba(148, 163, 184, 0.1) !important;
-    }
-    
-    /* ===== Sidebar Styling ===== */
-    [data-testid="stSidebar"] {
-        background: linear-gradient(180deg, #1E293B 0%, #0F172A 100%);
-        border-right: 1px solid rgba(124, 58, 237, 0.2);
-    }
-    
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
-    [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {
-        color: #F8FAFC !important;
-        font-weight: 700 !important;
     }
     
     /* ===== Input Fields ===== */
     .stTextInput > div > div > input,
-    .stNumberInput > div > div > input,
-    .stTextArea textarea,
-    .stDateInput > div > div > input {
-        background-color: #1E293B !important;
-        border: 1px solid rgba(124, 58, 237, 0.2) !important;
-        border-radius: 8px !important;
-        color: #F8FAFC !important;
-        padding: 0.75rem !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    .stTextInput > div > div > input:focus,
-    .stNumberInput > div > div > input:focus,
-    .stTextArea textarea:focus,
-    .stDateInput > div > div > input:focus {
-        border-color: #7C3AED !important;
-        box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.2) !important;
-    }
-    
-    /* ===== Select Boxes ===== */
-    .stSelectbox > div > div {
-        background-color: #1E293B !important;
-        border: 1px solid rgba(124, 58, 237, 0.2) !important;
-        border-radius: 8px !important;
-    }
-    
-    /* ===== Sliders ===== */
-    .stSlider > div > div > div > div {
-        background-color: #7C3AED !important;
-    }
-    
-    .stSlider > div > div > div > div > div {
-        background-color: #A78BFA !important;
-    }
-    
-    /* ===== Tabs ===== */
-    .stTabs [data-baseweb="tab-list"] {
-        gap: 0.5rem;
-    }
-    
-    .stTabs [data-baseweb="tab"] {
-        background-color: transparent;
-        border-radius: 8px 8px 0 0;
-        padding: 0.75rem 1.5rem;
-        font-weight: 600;
-        color: #94A3B8;
-        transition: all 0.3s ease;
-    }
-    
-    .stTabs [data-baseweb="tab"]:hover {
-        background-color: rgba(124, 58, 237, 0.1);
-        color: #A78BFA;
-    }
-    
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%);
-        color: white !important;
-    }
-    
-    /* ===== Expander ===== */
-    .streamlit-expanderHeader {
-        background-color: #1E293B !important;
-        border-radius: 8px !important;
-        border: 1px solid rgba(124, 58, 237, 0.2) !important;
-        padding: 1rem !important;
-        font-weight: 600 !important;
-        transition: all 0.3s ease !important;
-    }
-    
-    .streamlit-expanderHeader:hover {
-        border-color: #7C3AED !important;
-        background-color: rgba(124, 58, 237, 0.05) !important;
-    }
-    
-    /* ===== Info/Success/Warning/Error Boxes ===== */
-    .stAlert {
-        border-radius: 12px !important;
-        border-left-width: 4px !important;
-        padding: 1rem 1.25rem !important;
-        backdrop-filter: blur(10px);
-    }
-    
-    /* ===== Progress Bar ===== */
-    .stProgress > div > div > div > div {
-        background: linear-gradient(90deg, #7C3AED 0%, #A78BFA 100%);
-        border-radius: 10px;
-    }
-    
-    /* ===== Charts ===== */
-    .js-plotly-plot .plotly .modebar {
-        background-color: #1E293B !important;
-        border-radius: 8px;
-        padding: 0.5rem;
-    }
-    
-    /* ===== Divider ===== */
-    hr {
-        border-color: rgba(124, 58, 237, 0.2) !important;
-        margin: 2rem 0 !important;
-    }
-    
-    /* ===== File Uploader ===== */
-    [data-testid="stFileUploader"] {
-        background-color: #1E293B;
-        border: 2px dashed rgba(124, 58, 237, 0.4);
-        border-radius: 16px;
-        padding: 2rem;
-        transition: all 0.3s ease;
-    }
-    
-    [data-testid="stFileUploader"]:hover {
-        border-color: #7C3AED;
-        background-color: rgba(124, 58, 237, 0.05);
-    }
-    
-    /* ===== Download Button ===== */
-    .stDownloadButton > button {
-        background: linear-gradient(135deg, #10B981 0%, #34D399 100%);
-        color: white;
-        border: none;
+    .stNumberInput > div > div > input {
+        background-color: #F9FAFB;
         border-radius: 12px;
-        padding: 0.6rem 1.5rem;
-        font-weight: 600;
-        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
+        border: 1px solid #E5E7EB;
+        color: #111827;
     }
     
-    .stDownloadButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
-        background: linear-gradient(135deg, #059669 0%, #10B981 100%);
+    /* ===== DataFrames ===== */
+    [data-testid="stDataFrame"] {
+        border: 1px solid #E5E7EB !important;
+        border-radius: 12px;
     }
     
-    /* ===== Link Button ===== */
-    .stLinkButton > a {
-        background: linear-gradient(135deg, #7C3AED 0%, #A78BFA 100%) !important;
-        color: white !important;
-        border-radius: 12px !important;
-        padding: 0.6rem 1.5rem !important;
-        font-weight: 600 !important;
-        text-decoration: none !important;
-        display: inline-block !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 12px rgba(124, 58, 237, 0.25) !important;
-    }
-    
-    .stLinkButton > a:hover {
-        transform: translateY(-2px) !important;
-        box-shadow: 0 8px 20px rgba(124, 58, 237, 0.4) !important;
-    }
-    
-    /* ===== Code Blocks ===== */
-    code {
-        background-color: #1E293B !important;
-        color: #A78BFA !important;
-        padding: 0.25rem 0.5rem !important;
-        border-radius: 6px !important;
-        font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
-    }
-    
-    /* ===== Scrollbar ===== */
-    ::-webkit-scrollbar {
-        width: 12px;
-        height: 12px;
-    }
-    
-    ::-webkit-scrollbar-track {
-        background: #0F172A;
-    }
-    
-    ::-webkit-scrollbar-thumb {
-        background: linear-gradient(180deg, #7C3AED 0%, #A78BFA 100%);
-        border-radius: 6px;
-    }
-    
-    ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #6D28D9 0%, #8B5CF6 100%);
-    }
-    
-    /* ===== Animation ===== */
-    @keyframes fadeIn {
-        from { opacity: 0; transform: translateY(10px); }
-        to { opacity: 1; transform: translateY(0); }
-    }
-    
-    .main .block-container > div {
-        animation: fadeIn 0.5s ease-out;
+    /* ===== Toast Styling ===== */
+    div[data-testid="stToast"] {
+        border-radius: 12px;
     }
     </style>
+    """, unsafe_allow_html=True)
+
+def render_card(title, value, subtext=None, trend=None, icon=None):
+    """
+    Rendert eine minimalistische HTML Card im Trade Republic Style.
+    
+    Args:
+        title: Titel der Karte (z.B. "Gesamtwert", "Instagram")
+        value: Hauptwert (z.B. "12.450 €", "125.5k")
+        subtext: Optional - Zusätzlicher Text unter dem Wert (ersetzt description)
+        trend: Optional - Trend in Prozent (z.B. 2.4 für +2.4% oder -1.2 für -1.2%)
+        icon: Optional - Emoji/Icon für die Karte (z.B. "📸", "💰")
+    """
+    # Trend Color & Arrow mit Badge-Style
+    trend_color = "#10B981" if trend and trend > 0 else "#EF4444" if trend and trend < 0 else "#9CA3AF"
+    trend_arrow = "▲" if trend and trend > 0 else "▼" if trend and trend < 0 else "•"
+    trend_html = f'<span style="color: {trend_color}; font-size: 13px; font-weight: 600; background: {trend_color}15; padding: 2px 6px; border-radius: 4px;">{trend_arrow} {abs(trend):.1f}%</span>' if trend is not None else ""
+    
+    # Icon Logik (optional)
+    icon_html = f'<span style="font-size: 20px; margin-right: 8px;">{icon}</span>' if icon else ""
+    
+    # Subtext unter dem Wert
+    subtext_html = f'<div style="color: #9CA3AF; font-size: 13px; margin-top: 4px;">{subtext}</div>' if subtext else ""
+    
+    st.markdown(f"""
+        <div class="st-card">
+            <div style="display: flex; justify-content: space-between; align-items: start;">
+                <div style="flex: 1;">
+                    <h3 style="margin: 0 0 6px 0; font-size: 12px; color: #6B7280; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">{title}</h3>
+                    <div style="font-size: 26px; font-weight: 750; color: #111827; display: flex; align-items: center;">
+                        {icon_html}{value}
+                    </div>
+                </div>
+                <div style="text-align: right;">
+                    {trend_html}
+                </div>
+            </div>
+            {subtext_html}
+        </div>
     """, unsafe_allow_html=True)
 
 # =============================================================================
@@ -388,10 +193,15 @@ def inject_custom_css():
 
 @st.cache_resource
 def init_supabase():
-    """Initialisiere Supabase Client"""
-    url = st.secrets["supabase"]["url"]
-    key = st.secrets["supabase"]["key"]
-    return create_client(url, key)
+    """Initialisiere Supabase Client mit Error Handling"""
+    try:
+        url = st.secrets["SUPABASE_URL"]
+        key = st.secrets["SUPABASE_KEY"]
+        return create_client(url, key)
+    except Exception as e:
+        st.error(f"⚠️ Supabase Verbindungsfehler: {e}")
+        st.stop()
+        return None
 
 # =============================================================================
 # SESSION STATE INITIALIZATION
@@ -626,6 +436,277 @@ def downgrade_user_from_pro(email):
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
+
+def format_currency(value):
+    """
+    Formatiert Zahlen ins deutsche Währungsformat (1.000,00 €).
+    
+    Args:
+        value: Numerischer Wert (int oder float)
+    
+    Returns:
+        Formatierter String (z.B. "1.234,56 €")
+    """
+    return f"{value:,.2f} €".replace(",", "X").replace(".", ",").replace("X", ".")
+
+def format_big_number(num):
+    """
+    Formatiert große Zahlen kompakt (12.5k, 1.2M).
+    
+    Args:
+        num: Numerischer Wert (int oder float)
+    
+    Returns:
+        Formatierter String (z.B. "12.5k", "1.2M")
+    """
+    if num >= 1_000_000:
+        return f"{num/1_000_000:.1f}M"
+    if num >= 1_000:
+        return f"{num/1_000:.1f}k"
+    return str(int(num))
+
+def get_deal_status_display(status_db):
+    """
+    Mappt DB-Status zu deutschem Anzeige-Status für Deals.
+    
+    Args:
+        status_db: Status aus Datenbank (z.B. "In Progress", "Completed")
+    
+    Returns:
+        Deutscher Anzeige-Status (z.B. "In Arbeit", "Bezahlt")
+    """
+    status_map = {
+        'Negotiation': 'Verhandlung',
+        'Confirmed': 'Bestätigt',
+        'In Progress': 'In Arbeit',
+        'Completed': 'Bezahlt',
+        'Cancelled': 'Abgesagt'
+    }
+    return status_map.get(status_db, status_db)
+
+def get_deal_status_color(status_display):
+    """
+    Gibt Farbe für Deal-Status zurück.
+    
+    Args:
+        status_display: Anzeige-Status (deutsch oder englisch)
+    
+    Returns:
+        Hex-Farbcode (z.B. "#10B981")
+    """
+    color_map = {
+        'Bezahlt': '#10B981',
+        'Completed': '#10B981',
+        'Bestätigt': '#3B82F6',
+        'Confirmed': '#3B82F6',
+        'In Arbeit': '#F59E0B',
+        'In Progress': '#F59E0B',
+        'Verhandlung': '#6B7280',
+        'Negotiation': '#6B7280',
+        'Abgesagt': '#EF4444',
+        'Cancelled': '#EF4444'
+    }
+    return color_map.get(status_display, '#6B7280')
+
+# =============================================================================
+# API INTEGRATION FUNCTIONS
+# =============================================================================
+
+def fetch_youtube_stats(channel_id):
+    """
+    Holt YouTube-Statistiken via YouTube Data API v3.
+    
+    Args:
+        channel_id: YouTube Channel ID (z.B. "UCxxxxxxxxxxxxxxxxxxxxxx")
+    
+    Returns:
+        Dict mit subscribers, view_count, video_count oder None bei Fehler
+    """
+    if not YOUTUBE_API_AVAILABLE:
+        st.error("❌ YouTube API nicht verfügbar. Installiere: pip install google-api-python-client")
+        return None
+    
+    try:
+        api_key = st.secrets.get("YOUTUBE_API_KEY")
+        if not api_key:
+            st.error("❌ YOUTUBE_API_KEY nicht in secrets.toml gefunden")
+            return None
+        
+        youtube = build('youtube', 'v3', developerKey=api_key)
+        
+        request = youtube.channels().list(
+            part='statistics,snippet',
+            id=channel_id
+        )
+        response = request.execute()
+        
+        if response.get('items'):
+            stats = response['items'][0]['statistics']
+            snippet = response['items'][0]['snippet']
+            
+            return {
+                "subscribers": int(stats.get('subscriberCount', 0)),
+                "view_count": int(stats.get('viewCount', 0)),
+                "video_count": int(stats.get('videoCount', 0)),
+                "channel_title": snippet.get('title', 'Unknown')
+            }
+        else:
+            st.error(f"❌ Keine Daten für Channel ID: {channel_id}")
+            return None
+            
+    except Exception as e:
+        st.error(f"❌ YouTube API Fehler: {e}")
+        return None
+
+def update_channel_in_db(platform, handle, value_main, user_id=None):
+    """
+    Aktualisiert Channel-Werte in der Supabase Datenbank.
+    
+    Args:
+        platform: Plattform-Name (z.B. "YouTube")
+        handle: Handle/Username
+        value_main: Neuer Wert für value_main
+        user_id: Optional - User Email (falls nicht aus session_state)
+    
+    Returns:
+        True bei Erfolg, False bei Fehler
+    """
+    supabase = init_supabase()
+    if not supabase:
+        return False
+    
+    # Hole User Email
+    if user_id is None:
+        if "user" not in st.session_state or st.session_state["user"] is None:
+            st.error("❌ Nicht eingeloggt")
+            return False
+        user_id = st.session_state["user"].email
+    
+    try:
+        # Update metric_main auch (formatierte Anzeige)
+        metric_main = f"{format_big_number(value_main)} Subscribers" if platform == "YouTube" else f"{format_big_number(value_main)} Follower"
+        
+        response = supabase.table("channels").update({
+            "value_main": value_main,
+            "metric_main": metric_main
+        }).eq("platform", platform).eq("handle", handle).eq("user_id", user_id).execute()
+        
+        return True
+    except Exception as e:
+        st.error(f"❌ Datenbank-Update fehlgeschlagen: {e}")
+        return False
+
+def sync_youtube_channel(channel_id, handle):
+    """
+    Synchronisiert YouTube-Statistiken und aktualisiert die Datenbank.
+    
+    Args:
+        channel_id: YouTube Channel ID
+        handle: Handle in der Datenbank
+    
+    Returns:
+        Dict mit Stats oder None bei Fehler
+    """
+    stats = fetch_youtube_stats(channel_id)
+    
+    if stats:
+        success = update_channel_in_db("YouTube", handle, stats["subscribers"])
+        
+        if success:
+            st.success(f"✅ YouTube-Stats aktualisiert: {format_big_number(stats['subscribers'])} Subscribers")
+            return stats
+        else:
+            st.error("❌ Datenbank-Update fehlgeschlagen")
+            return None
+    
+    return None
+
+def get_assets():
+    """
+    Holt alle Assets des aktuell eingeloggten Users aus der Datenbank,
+    sortiert nach höchstem Wert.
+    
+    Returns:
+        Liste von Asset-Dicts
+    """
+    supabase = init_supabase()
+    if not supabase:
+        return []
+    
+    # Hole User aus Session State
+    if "user" not in st.session_state or st.session_state["user"] is None:
+        return []
+    
+    user_id = st.session_state["user"].email
+    
+    try:
+        response = supabase.table("assets") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("current_value", desc=True) \
+            .execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Fehler beim Laden der Assets: {e}")
+        return []
+
+def get_channels():
+    """
+    Holt alle Social Media Channels des aktuell eingeloggten Users aus der Datenbank,
+    sortiert nach wichtigstem Kanal (höchste Reichweite).
+    
+    Returns:
+        Liste von Channel-Dicts
+    """
+    supabase = init_supabase()
+    if not supabase:
+        return []
+    
+    # Hole User aus Session State
+    if "user" not in st.session_state or st.session_state["user"] is None:
+        return []
+    
+    user_id = st.session_state["user"].email
+    
+    try:
+        response = supabase.table("channels") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("value_main", desc=True) \
+            .execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Fehler beim Laden der Channels: {e}")
+        return []
+
+def get_deals():
+    """
+    Holt alle Deals/Kooperationen des aktuell eingeloggten Users aus der Datenbank,
+    sortiert nach Fälligkeitsdatum (nächste zuerst).
+    
+    Returns:
+        Liste von Deal-Dicts
+    """
+    supabase = init_supabase()
+    if not supabase:
+        return []
+    
+    # Hole User aus Session State
+    if "user" not in st.session_state or st.session_state["user"] is None:
+        return []
+    
+    user_id = st.session_state["user"].email
+    
+    try:
+        response = supabase.table("deals") \
+            .select("*") \
+            .eq("user_id", user_id) \
+            .order("due_date", desc=False) \
+            .execute()
+        return response.data if response.data else []
+    except Exception as e:
+        st.error(f"Fehler beim Laden der Deals: {e}")
+        return []
 
 def check_auth():
     """Prüft ob User eingeloggt ist, sonst zeige Login Screen"""
